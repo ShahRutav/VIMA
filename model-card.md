@@ -9,7 +9,7 @@ VIMA (**Vi**suo**M**otor **A**ttention, reads "_v-eye-ma_") is a novel Transform
 October 2022
 
 ### Model Type
-VIMA model consists of a pretrained T5 model as the prompt encoder, several tokenizers to process multimodal inputs, and a causal decoder that augoregressively predicts actions given the prompt and interaction history.
+VIMA model consists of a pretrained T5 model as the prompt encoder, several tokenizers to process multimodal inputs, and a causal decoder that autoregressively predicts actions given the prompt and interaction history.
 
 ### Model Versions
 We released 7 checkpoints covering a spectrum of model capacity from 2M to 200M.
