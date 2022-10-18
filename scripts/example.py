@@ -81,7 +81,7 @@ def main(cfg):
     assert cfg.task in PARTITION_TO_SPECS["test"][cfg.partition]
 
     seed = 42
-    policy = create_policy_from_ckpt(cfg.ckpt, cfg.device)
+    policy = create_policy_from_ckpt(cfg.ckpt, cfg.device).to(cfg.device)
     env = TimeLimitWrapper(
         ResetFaultToleranceWrapper(
             make(
