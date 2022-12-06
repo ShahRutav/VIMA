@@ -81,6 +81,9 @@ def main(cfg):
     assert cfg.task in PARTITION_TO_SPECS["test"][cfg.partition]
 
     seed = 42
+    NUM_EVAL_TRAJ = 25
+    num_eval_traj = NUM_EVAL_TRAJ
+    num_successes = 0
     policy = create_policy_from_ckpt(cfg.ckpt, cfg.device).to(cfg.device)
     env = TimeLimitWrapper(
         ResetFaultToleranceWrapper(
@@ -97,7 +100,7 @@ def main(cfg):
         bonus_steps=2,
     )
 
-    while True:
+    while num_eval_traj:
         env.global_seed = seed
 
         obs = env.reset()
@@ -114,7 +117,7 @@ def main(cfg):
                     prompt=prompt, prompt_assets=prompt_assets, views=["front", "top"]
                 )
                 word_batch = word_batch.to(cfg.device)
-                image_batch = image_batch.to_torch_tensor(device=cfg.device)
+                if image_batch: image_batch = image_batch.to_torch_tensor(device=cfg.device)
                 prompt_tokens, prompt_masks = policy.forward_prompt_assembly(
                     (prompt_token_type, word_batch, image_batch)
                 )
@@ -237,13 +240,22 @@ def main(cfg):
             obs, _, done, info = env.step(actions)
             elapsed_steps += 1
             if done:
+                print(env.check_success().success)
+                num_successes += env.check_success().success
+                num_eval_traj -= 1
                 break
+    print("************************************************************************")
+    print("Success: {}".format((100.00*num_successes)/NUM_EVAL_TRAJ))
+    print("************************************************************************")
 
 
 def prepare_prompt(*, prompt: str, prompt_assets: dict, views: list[str]):
     views = sorted(views)
     encoding = tokenizer.encode(prompt, add_special_tokens=True)
     prompt_ids, prompt_tokens = encoding.ids, encoding.tokens
+    print(set(
+        [token[1:-1] for token in prompt_tokens if token in PLACEHOLDERS]
+    ))
     assert set(prompt_assets.keys()) == set(
         [token[1:-1] for token in prompt_tokens if token in PLACEHOLDERS]
     )
@@ -364,10 +376,12 @@ def prepare_prompt(*, prompt: str, prompt_assets: dict, views: list[str]):
         word_batch
     ) + len(image_batch)
     word_batch = any_stack(word_batch, dim=0)
-    image_batch = any_to_datadict(stack_sequence_fields(image_batch))
-
     word_batch = any_to_torch_tensor(word_batch)
-    image_batch = image_batch.to_torch_tensor()
+    if image_batch:
+        image_batch = any_to_datadict(stack_sequence_fields(image_batch))
+        image_batch = image_batch.to_torch_tensor()
+    else:
+        image_batch = None
     return raw_prompt_token_type, word_batch, image_batch
 
 

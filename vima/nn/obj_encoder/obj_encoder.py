@@ -28,6 +28,7 @@ class ObjEncoder(nn.Module):
         views = sorted(views)
         self._views = views
         self._transformer_emb_dim = transformer_emb_dim
+        self._vit_resolution = vit_resolution
 
         self.cropped_img_encoder = ViTEncoder(
             output_dim=vit_output_dim,
@@ -69,6 +70,7 @@ class ObjEncoder(nn.Module):
         """
         out: (..., n_objs * n_views, E)
         """
+        assert all( (cropped_img[view].shape[-1] == self._vit_resolution) is True for view in self._views)
         img_feats = {
             view: self.cropped_img_encoder(cropped_img[view]) for view in self._views
         }

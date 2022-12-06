@@ -161,9 +161,12 @@ class Policy(nn.Module):
     def forward_prompt_assembly(self, prompts):
         raw_prompts_token_type, word_batch, image_batch = prompts
         batch_word_emb = self.prompt_embedding(word_batch)
-        batch_image_emb = self.obj_encoder(**image_batch)
-        batch_image_emb = self.prompt_obj_post_layer(batch_image_emb)
-        n_max_objs = batch_image_emb.shape[-2]
+        if image_batch:
+            batch_image_emb = self.obj_encoder(**image_batch)
+            batch_image_emb = self.prompt_obj_post_layer(batch_image_emb)
+            n_max_objs = batch_image_emb.shape[-2]
+        else:
+            n_max_objs = 0 
 
         L_max = 0
         for raw_prompt in raw_prompts_token_type:

@@ -1,4 +1,6 @@
+import os
 import collections
+import pickle
 import numpy as np
 import copy
 import tree
@@ -23,6 +25,38 @@ __all__ = [
     "add_batch_dim",
 ]
 
+def f_join(*args):
+    return os.path.join(*args)
+
+def load_pickle(path):
+    with open(path, 'rb') as handle:
+        b = pickle.load(handle)
+    return b
+
+def sequential_split_dataset(dataset, split_portions: list):
+    return torch.utils.data.random_split(dataset=dataset, lengths=split_portions)
+
+def any_zeros_like(xs: dict):
+    def zeros_like(arr):
+        if isinstance(arr, np.ndarray):
+            return np.zeros_like(arr)
+        elif isinstance(arr, dict):
+            return dict(map(lambda item: (item[0], zeros_like(item[1])), arr.items()))
+        else:
+            print("ERROR TYPE: ", type(arr))
+            raise NotImplementedError 
+    return dict(map(lambda item: (item[0], zeros_like(item[1])), xs.items()))
+
+def any_ones_like(xs: dict):
+    def ones_like(arr):
+        if isinstance(arr, np.ndarray):
+            return np.ones_like(arr)
+        elif isinstance(arr, dict):
+            return dict(map(lambda item: (item[0], ones_like(item[1])), arr.items()))
+        else:
+            print("ERROR TYPE: ", type(arr))
+            raise NotImplementedError 
+    return dict(map(lambda item: (item[0], ones_like(item[1])), xs.items()))
 
 def any_concat(xs: list, *, dim: int = 0):
     """
