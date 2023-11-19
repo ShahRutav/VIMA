@@ -34,6 +34,8 @@ def load_pickle(path):
     return b
 
 def sequential_split_dataset(dataset, split_portions: list):
+    split_portions = [int(len(dataset) * p) for p in split_portions]
+    split_portions = [split_portions[0], len(dataset) - split_portions[0]]
     return torch.utils.data.random_split(dataset=dataset, lengths=split_portions)
 
 def any_zeros_like(xs: dict):

@@ -1,7 +1,7 @@
 import os
 import torch
 
-from .policy import Policy
+#from .policy import Policy
 
 
 def create_policy_from_ckpt(ckpt_path, device):
