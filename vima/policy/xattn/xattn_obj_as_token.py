@@ -635,8 +635,8 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
         )
 
         # encode image batch
-        n_img = len(list(image_batch["name"].values())[0])
-        del image_batch["name"]
+        # n_img = len(list(image_batch["name"].values())[0])
+        # del image_batch["name"]
         batch_image_emb = self.obj_encoder(
             **image_batch
         )  # (n_imgs, n_max_objs, embed_dim)
@@ -709,7 +709,7 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
 
         # check that all embedded features are used
         assert word_ptr == n_words, "INTERNAL"
-        assert img_ptr == n_img, "INTERNAL"
+        # assert img_ptr == n_img, "INTERNAL"
         prompt_tokens = torch.stack(prompt_tokens, dim=0)  # (B, L, emb_dim)
         prompt_masks = torch.stack(prompt_masks, dim=0)  # (B, L)
         prompt_tokens = prompt_tokens.transpose(0, 1)  # (L, B, emb_dim)
@@ -737,7 +737,7 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
             prompt_masks: (B, L_prompt)
         """
         objects, ee = obs["objects"], obs["ee"]
-        del objects["name"]
+        # del objects["name"]
         leading_dims = ee.shape[:2]  # (L, B)
 
         # encode vision

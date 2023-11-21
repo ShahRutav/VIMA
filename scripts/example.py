@@ -74,14 +74,13 @@ PLACEHOLDERS = [token.content for token in PLACEHOLDER_TOKENS]
 tokenizer = Tokenizer.from_pretrained("t5-base")
 tokenizer.add_tokens(PLACEHOLDER_TOKENS)
 
-
 @torch.no_grad()
 def main(cfg):
     assert cfg.partition in ALL_PARTITIONS
     assert cfg.task in PARTITION_TO_SPECS["test"][cfg.partition]
 
     seed = 42
-    NUM_EVAL_TRAJ = 25
+    NUM_EVAL_TRAJ = cfg.num_eval_traj 
     num_eval_traj = NUM_EVAL_TRAJ
     num_successes = 0
     policy = create_policy_from_ckpt(cfg.ckpt, cfg.device).to(cfg.device)
@@ -92,8 +91,8 @@ def main(cfg):
                 modalities=["segm", "rgb"],
                 task_kwargs=PARTITION_TO_SPECS["test"][cfg.partition][cfg.task],
                 seed=seed,
-                render_prompt=True,
-                display_debug_window=True,
+                render_prompt=False,
+                display_debug_window=False,
                 hide_arm_rgb=False,
             )
         ),
@@ -101,6 +100,7 @@ def main(cfg):
     )
 
     while num_eval_traj:
+        print("num_eval_traj: ", num_eval_traj)
         env.global_seed = seed
 
         obs = env.reset()
@@ -112,6 +112,7 @@ def main(cfg):
         elapsed_steps = 0
         inference_cache = {}
         while True:
+            print("elapsed_steps: ", elapsed_steps)
             if elapsed_steps == 0:
                 prompt_token_type, word_batch, image_batch = prepare_prompt(
                     prompt=prompt, prompt_assets=prompt_assets, views=["front", "top"]
@@ -237,15 +238,16 @@ def main(cfg):
             )
             actions = {k: v.cpu().numpy() for k, v in actions.items()}
             actions = any_slice(actions, np.s_[0, 0])
-            obs, _, done, info = env.step(actions)
+            obs, _, done, truncated, info = env.step(actions)
             elapsed_steps += 1
-            if done:
-                print(env.check_success().success)
-                num_successes += env.check_success().success
+            if done or truncated:
+                print(env.env.env.task.check_success().success)
+                num_successes += env.env.env.task.check_success().success
                 num_eval_traj -= 1
                 break
     print("************************************************************************")
-    print("Success: {}".format((100.00*num_successes)/NUM_EVAL_TRAJ))
+    print("Success: ")
+    print("{}".format((100.00*num_successes)/NUM_EVAL_TRAJ))
     print("************************************************************************")
 
 
@@ -516,5 +518,7 @@ if __name__ == "__main__":
     arg.add_argument("--task", type=str, default="visual_manipulation")
     arg.add_argument("--ckpt", type=str, required=True)
     arg.add_argument("--device", default="cpu")
+    arg.add_argument("--num_eval_traj", default=25, type=int)
+
     arg = arg.parse_args()
     main(arg)
