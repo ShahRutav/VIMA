@@ -7,7 +7,7 @@ from vima import utils as U
 
 from .dataset import VIMADataset
 from .process.dm_only import collate_fn_bbox, collate_fn_rgb_only
-
+import json
 
 class VIMADataModule(LightningDataModule):
     def __init__(
@@ -23,6 +23,7 @@ class VIMADataModule(LightningDataModule):
         use_bbox_repr: bool = True,
         cropped_img_size: int = 224,
         num_trajs: int | None = None,
+        num_trajs_dict_path: str | None = None,
         seed: int | None = None,
         task_selection: str | list[str] | None = None,
         add_obj_aug: bool = False,
@@ -43,7 +44,12 @@ class VIMADataModule(LightningDataModule):
         self.cropped_img_size = cropped_img_size
         self._add_obj_aug = add_obj_aug
         self._obj_aug_prob_map = obj_aug_prob_map
+        
         self.num_trajs = num_trajs
+        self.num_trajs_dict_path = num_trajs_dict_path
+        with open(self.num_trajs_dict_path, 'r') as file:
+            self.num_trajs_dict = json.load(file)
+
         self.seed = seed
         self.task_selection = task_selection
         self._t5_prompt_prefix = t5_prompt_prefix
@@ -64,6 +70,7 @@ class VIMADataModule(LightningDataModule):
                 use_bbox_repr=self.use_bbox_repr,
                 cropped_img_size=self.cropped_img_size,
                 num_trajs=self.num_trajs,
+                num_trajs_dict=self.num_trajs_dict,
                 seed=self.seed,
                 task_selection=self.task_selection,
                 add_obj_aug=self._add_obj_aug,
