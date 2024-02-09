@@ -44,7 +44,7 @@ def any_zeros_like(xs: dict):
             return dict(map(lambda item: (item[0], zeros_like(item[1])), arr.items()))
         else:
             print("ERROR TYPE: ", type(arr))
-            raise NotImplementedError 
+            raise NotImplementedError
     return dict(map(lambda item: (item[0], zeros_like(item[1])), xs.items()))
 
 def any_ones_like(xs: dict):
@@ -55,7 +55,7 @@ def any_ones_like(xs: dict):
             return dict(map(lambda item: (item[0], ones_like(item[1])), arr.items()))
         else:
             print("ERROR TYPE: ", type(arr))
-            raise NotImplementedError 
+            raise NotImplementedError
     return dict(map(lambda item: (item[0], ones_like(item[1])), xs.items()))
 
 def any_concat(xs: list, *, dim: int = 0):
@@ -826,7 +826,6 @@ def _match_patterns_helper(element, patterns):
 
 
 def stack_sequence_fields(sequence):
-
     # Handle empty input sequences.
     if not sequence:
         raise ValueError("Input sequence must not be empty")

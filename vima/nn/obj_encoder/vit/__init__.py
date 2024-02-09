@@ -1,1 +1,1 @@
-from .vit import ViTEncoder
+from .vit import ViTEncoder, GatoViTEncoder, ViTEncoderRectangular
