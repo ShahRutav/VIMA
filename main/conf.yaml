@@ -1,0 +1,135 @@
+defaults:
+  - _self_  # all below configs will override this conf.yaml
+  - algo: ???
+
+run_name: "${optional_:${prefix}}\
+  ${arch}\
+  _lr${scientific:${lr},1}\
+  _wd${scientific:${wd}}\
+  ${ifelse:${module.use_cosine_lr},_cos.epochs${module.lr_warmup_epochs}-${module.lr_cosine_epochs}, ''}\
+  _b${bs}.vb${vbs}\
+  ${__optional:${suffix}}\
+  ${_optional:${postsuffix}}"
+exp_root_dir: "/home/rutavms/research/preference/huihan_vima/vima/experiments/${arch}" #"/home/user/workspace/yunfan/vima_finalized/${arch}"
+
+# ====== main cfg ======
+seed: 3074
+gpus: ${ifelse:${test.ckpt_path},1,-1}
+lr: 1e-4
+wd: 0.0
+lr_layer_decay: 1.0
+arch: ???  # filled by algo/*/*.yaml
+bs: 16  # batch size, on 32G v100, 200M-scale model
+vbs: ${mult:${bs},1}
+num_trajs: 50000
+warmup_epochs: 3
+decay_epochs: 7
+epochs: 10
+
+eval_best_model: true
+
+add_obj_aug: true
+obj_aug_prob_map:
+  0: 0.95
+  1: 0.05
+
+cropped_img_size: 32
+
+wandb_entity_name: "rpl-hitl"
+
+# ------ logging ------
+use_wandb: true
+wandb_project: ???
+wandb_run_name: ${run_name}
+
+# ------ module ------
+module:
+  cls: ???
+  # ------ learning ------
+  lr: ${lr}
+  use_cosine_lr: true
+  lr_warmup_epochs: ${warmup_epochs}
+  lr_cosine_epochs: ${decay_epochs}
+  lr_cosine_min: 1e-7
+  weight_decay: ${wd}
+  lr_layer_decay: ${lr_layer_decay}
+  # ------ online eval ------
+  eval_partition: within_distribution
+  eval_vec_env_size: null
+  n_eval_per_task: ${ifelse:${test.ckpt_path},200,50}
+  deterministic_eval: true
+  eval_bonus_steps: 2
+  enable_visualization: true
+  bbox_from_detection_model: false
+  detection_model_ckpt_path: "/home/user/models/vima_detection/model_final_v2.pth"
+  detection_model_threshold: 0.3
+  # ------ randomness ------
+  seed: ${seed}
+  # ------ profile flops ------
+  profile_flops: false
+
+data_module:
+  cls: vima.data.data_module.VIMADataModule
+  path: "/data/rutavms/data/dataset_50k_lang_left_pick/"
+  tokenizer_add_special_tokens: ???
+  batch_size: ${bs}
+  val_batch_size: ${vbs}
+  dataloader_num_workers: 64
+  train_portion: 0.924
+  tokenizer: ???
+  use_bbox_repr: true
+  cropped_img_size: ${cropped_img_size}
+  num_trajs: ${num_trajs}
+  num_trajs_dict_path: /home/rutavms/research/preference/huihan_vima/vima/main/num_trajs_dict.json
+  seed: ${seed}
+  add_obj_aug: ${add_obj_aug}
+  obj_aug_prob_map: ${obj_aug_prob_map}
+  task_selection:
+
+trainer:
+  cls: pytorch_lightning.Trainer
+  strategy: ddp
+  devices: ${gpus}
+  benchmark: true  # enables cudnn.benchmark
+  accumulate_grad_batches: 2
+  num_sanity_val_steps: 2
+  max_epochs: ${epochs}
+  val_check_interval: 1.0
+  gradient_clip_val: 1.0
+  checkpoint:  # this sub-dict will be popped to send to ModelCheckpoint as args
+  - filename: "epoch{epoch}-val_acc{val/acc:.5f}"
+    save_top_k: 1
+    save_last: true
+    monitor: "val/acc"
+    mode: max
+    auto_insert_metric_name: false  # prevent creating subfolder caused by the slash
+  callbacks:
+    - cls: LearningRateMonitor
+      logging_interval: step
+    - cls: RichModelSummary
+
+# ------------- Global cfgs for enlight.LightningTrainer ---------------
+
+
+# ------------- Resume training ---------------
+resume:
+  ckpt_path: null
+  full_state: false  # if true, resume all states including optimizer, amp, lightning callbacks
+  strict: true
+
+# ------------- Testing ---------------
+test:
+  ckpt_path: null
+
+# ----------------------------
+
+prefix:
+suffix:
+postsuffix:
+
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: "."
+  output_subdir: null

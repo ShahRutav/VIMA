@@ -1,0 +1,66 @@
+# @package _global_
+
+arch: "xattn_obj_token_208M"
+wandb_project: "vima_xattn_obj_token"
+
+module:
+  cls: ActionGPTModule
+  policy:
+    cls: XAttnGPTObjAsTokenPolicy
+    # ====== model ======
+    embed_dim: 768
+    # ------ transformer ------
+    dt_n_layers: 11
+    dt_n_heads: 24
+    dt_dropout: 0.1
+    xattn_n_heads: 24
+    xattn_ff_expanding: 4
+    xattn_detach_qk: false
+    xattn_n_positions: 256
+    use_geglu: true
+    # ------ observation encoder ------
+    # ...... objects ......
+    obj_transformer_emb_dim: 768
+    img_views: ["front", "top"]
+    img_encoder_output_dim: 768
+    img_encoder_type: "vit"
+    vit_resolution: ${cropped_img_size}
+    vit_patch_size: 16
+    vit_width: 768
+    vit_layers: 4
+    vit_heads: 24
+    add_bbox_mlp: true
+    bbox_mlp_hidden_dim: 768
+    bbox_mlp_hidden_depth: 2
+    # ...... end effector state ......
+    end_effector_emb_dim: 2
+    # ------ action encoder ------
+    action_encoder_emb_dim: 256
+    action_encoder_hidden_depth: 1
+    use_continuous_action_encoder_despite_discrete_output: true
+    # ------ prompt encoder ------
+    prompt_emb_pretrained_lm: "t5-base"
+    add_prompt_obj_adapter_mlp: true
+    prompt_obj_adapter_hidden_depth: 2
+    t5_prompt_encoder: "t5-base"
+    unfreeze_t5_prompt_encoder_last_n_layers: 2
+    # ------ action decoder ------
+    action_decoder_hidden_dim: 512
+    action_decoder_hidden_depth: 2
+    action_decoder_activation: "relu"
+    action_decoder_norm_type: null
+    action_decoder_last_layer_gain: 0.01
+    # ====== learning ======
+    # ------ action type ------
+    action_type: "discrete"
+    n_discrete_x_bins: 50
+    n_discrete_y_bins: 100
+    n_discrete_z_bins: 50
+    n_discrete_rot_bins: 50
+    # ------ loss weights ------
+    sub_action_loss_weights: null
+
+data_module:
+  tokenizer_add_special_tokens: true
+  tokenizer: "t5-base"
+  t5_prompt_prefix: null

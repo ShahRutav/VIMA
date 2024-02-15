@@ -1,0 +1,15 @@
+{
+    "follow_order": 50000,               
+    "rotate": 5000,  
+    "manipulate_old_neighbor": 50000,       
+    "same_shape": 5000,  
+    "novel_adj": 5000,                     
+    "scene_understanding": 5000,  
+    "novel_noun": 5000,                    
+    "sweep_without_exceeding": 5000,  
+    "pick_in_order_then_restore": 50000,    
+    "twist": 5000,  
+    "rearrange": 50000,                     
+    "visual_manipulation": 5000,  
+    "rearrange_then_restore": 50000
+}
