@@ -20,7 +20,7 @@ class VIMATrainer(LightingTrainer):
     def create_module(self, cfg) -> pl.LightningModule:
         module = U.instantiate(cfg.module)
         # compute steps per epoch for LR scheduler
-        num_gpus = self.trainer.num_gpus
+        num_gpus = self.trainer.num_devices
         if num_gpus == 0:
             num_gpus = 1
         effective_bs = cfg.bs * num_gpus * cfg.trainer.accumulate_grad_batches
@@ -41,7 +41,7 @@ class VIMATrainer(LightingTrainer):
     def create_data_module(self, cfg) -> pl.LightningDataModule:
         return U.instantiate(cfg.data_module)
 
-    def create_loggers(self, cfg) -> list[pl.loggers.LightningLoggerBase]:
+    def create_loggers(self, cfg) -> list[pl.loggers.Logger]:
         loggers = super().create_loggers(cfg)
         if cfg.use_wandb:
             loggers.append(

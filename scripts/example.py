@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import copy
 
 import numpy as np
+from PIL import Image
 from tokenizers import Tokenizer
 from tokenizers import AddedToken
 from einops import rearrange
@@ -74,26 +76,80 @@ PLACEHOLDERS = [token.content for token in PLACEHOLDER_TOKENS]
 tokenizer = Tokenizer.from_pretrained("t5-base")
 tokenizer.add_tokens(PLACEHOLDER_TOKENS)
 
+def plot_actions(action_to_plot, file_name):
+    '''
+        Plot the action with label pick and place in the image and save the image
+        pick is the one with pose0_position and place is the one with pose1_position
+    '''
+    video = []
+    for index, rgb in enumerate(action_to_plot['rgb']):
+        # convert chw to hwc
+        rgb = np.transpose(rgb, (1, 2, 0))
+        h, w, _ = rgb.shape
+        rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        pos0 = action_to_plot['pose0_position'][index]
+        pos1 = action_to_plot['pose1_position'][index]
+
+        pos0 = np.asarray(pos0.squeeze()) * np.array([h, w])
+        pos1 = np.asarray(pos1.squeeze()) * np.array([h, w])
+
+        rgb = cv2.circle(rgb, tuple(pos0.astype(np.int32)[::-1]), 5, (0, 0, 255), 2)
+        rgb = cv2.circle(rgb, tuple(pos1.astype(np.int32)[::-1]), 5, (0, 255, 0), 2)
+        rgb = cv2.putText(
+            rgb,
+            " pick",
+            org=tuple(pos0.astype(np.int32)[::-1]),
+            fontScale=0.5,
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            color=(0, 0, 255),
+            thickness=2,
+            lineType=cv2.LINE_AA,
+        )
+        rgb = cv2.putText(
+            rgb,
+            " place",
+            org=tuple(pos1.astype(np.int32)[::-1]),
+            fontScale=0.5,
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            color=(0, 255, 0),
+            thickness=2,
+            lineType=cv2.LINE_AA,
+        )
+        rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+        video.append(rgb)
+    # stack the images in the video list along the height axis
+    video = np.vstack(video)
+    # save it as an image
+    video = Image.fromarray(video)
+    video.save(file_name)
+    print(f"Saved the video at {file_name}")
+    return
+
 @torch.no_grad()
 def main(cfg):
-    assert cfg.partition in ALL_PARTITIONS
+    assert cfg.partition in ALL_PARTITIONS, f"invalid partition {cfg.partition}. Allowed: {ALL_PARTITIONS}"
     assert cfg.task in PARTITION_TO_SPECS["test"][cfg.partition]
 
     seed = 42
-    NUM_EVAL_TRAJ = cfg.num_eval_traj 
+    NUM_EVAL_TRAJ = cfg.num_eval_traj
     num_eval_traj = NUM_EVAL_TRAJ
     num_successes = 0
+    exp_dir = os.path.dirname(os.path.dirname(cfg.ckpt))
+    video_dir = os.path.join(exp_dir, "videos")
+    if cfg.save_video:
+        os.makedirs(video_dir, exist_ok=True)
+
     policy = create_policy_from_ckpt(cfg.ckpt, cfg.device).to(cfg.device)
     env = TimeLimitWrapper(
         ResetFaultToleranceWrapper(
             make(
                 cfg.task,
                 modalities=["segm", "rgb"],
-                task_kwargs=PARTITION_TO_SPECS["test"][cfg.partition][cfg.task],
+                task_kwargs=PARTITION_TO_SPECS["test"][cfg.partition][cfg.task] if cfg.dist == "test" else PARTITION_TO_SPECS[cfg.dist][cfg.task],
                 seed=seed,
                 render_prompt=False,
                 display_debug_window=False,
-                hide_arm_rgb=False,
+                hide_arm_rgb=True,
             )
         ),
         bonus_steps=2,
@@ -104,6 +160,7 @@ def main(cfg):
         env.global_seed = seed
 
         obs = env.reset()
+        rgb_plot = obs['rgb']['top']
         env.render()
 
         meta_info = env.meta_info
@@ -111,6 +168,7 @@ def main(cfg):
         prompt_assets = env.prompt_assets
         elapsed_steps = 0
         inference_cache = {}
+        action_to_plot = {'pose0_position': [], 'pose1_position': [], 'rgb': []}
         while True:
             print("elapsed_steps: ", elapsed_steps)
             if elapsed_steps == 0:
@@ -197,10 +255,16 @@ def main(cfg):
             )  # (1, B, E)
             dist_dict = policy.forward_action_decoder(predicted_action_tokens)
             actions = {k: v.mode() for k, v in dist_dict.items()}
+
             action_tokens = policy.forward_action_token(actions)  # (1, B, E)
             action_tokens = action_tokens.squeeze(0)  # (B, E)
             inference_cache["action_tokens"].append(action_tokens[0])
             actions = policy._de_discretize_actions(actions)
+
+            action_to_plot['pose0_position'].append(copy.deepcopy(actions['pose0_position']))
+            action_to_plot['pose1_position'].append(copy.deepcopy(actions['pose1_position']))
+            action_to_plot['rgb'].append(copy.deepcopy(rgb_plot))
+
             action_bounds = [meta_info["action_bounds"]]
             action_bounds_low = [action_bound["low"] for action_bound in action_bounds]
             action_bounds_high = [
@@ -228,6 +292,7 @@ def main(cfg):
             actions["pose1_position"] = torch.clamp(
                 actions["pose1_position"], min=action_bounds_low, max=action_bounds_high
             )
+
             actions["pose0_rotation"] = actions["pose0_rotation"] * 2 - 1
             actions["pose1_rotation"] = actions["pose1_rotation"] * 2 - 1
             actions["pose0_rotation"] = torch.clamp(
@@ -238,9 +303,12 @@ def main(cfg):
             )
             actions = {k: v.cpu().numpy() for k, v in actions.items()}
             actions = any_slice(actions, np.s_[0, 0])
-            obs, _, done, truncated, info = env.step(actions)
+            obs, _, done, info = env.step(actions)
+            rgb_plot = obs['rgb']['top']
             elapsed_steps += 1
-            if done or truncated:
+            if done:
+                if cfg.save_video:
+                    plot_actions(action_to_plot, os.path.join(video_dir, f"video_{num_eval_traj:03d}.png"))
                 print(env.env.env.task.check_success().success)
                 num_successes += env.env.env.task.check_success().success
                 num_eval_traj -= 1
@@ -347,7 +415,7 @@ def prepare_prompt(*, prompt: str, prompt_assets: dict, views: list[str]):
                 }
                 # add mask
                 token["mask"] = {
-                    view: np.ones((n_objs_prompt[view],), dtype=np.bool)
+                    view: np.ones((n_objs_prompt[view],), dtype=bool)
                     for view in views
                 }
                 n_objs_to_pad = {
@@ -367,7 +435,7 @@ def prepare_prompt(*, prompt: str, prompt_assets: dict, views: list[str]):
                         for view in views
                     },
                     "mask": {
-                        view: np.zeros((n_objs_to_pad[view]), dtype=np.bool)
+                        view: np.zeros((n_objs_to_pad[view]), dtype=bool)
                         for view in views
                     },
                 }
@@ -514,11 +582,13 @@ class TimeLimitWrapper(_TimeLimit):
 
 if __name__ == "__main__":
     arg = argparse.ArgumentParser()
+    arg.add_argument("--dist", type=str, default="test", choices=["test", "train_l", "train"])
     arg.add_argument("--partition", type=str, default="placement_generalization")
     arg.add_argument("--task", type=str, default="visual_manipulation")
     arg.add_argument("--ckpt", type=str, required=True)
     arg.add_argument("--device", default="cpu")
     arg.add_argument("--num_eval_traj", default=25, type=int)
+    arg.add_argument('--save_video', action="store_true", default=False)
 
     arg = arg.parse_args()
     main(arg)

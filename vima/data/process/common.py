@@ -660,7 +660,7 @@ def collate_prompt_with_bbox(*, views, raw_prompt_list, cropped_img_size):
                 n_objs_prompt = {view: len(token["name"][view]) for view in views}
                 # add mask
                 token["mask"] = {
-                    view: np.ones((n_objs_prompt[view],), dtype=np.bool)
+                    view: np.ones((n_objs_prompt[view],), dtype=bool)
                     for view in views
                 }
                 n_objs_to_pad = {
@@ -689,7 +689,7 @@ def collate_prompt_with_bbox(*, views, raw_prompt_list, cropped_img_size):
                         for view in views
                     },
                     "mask": {
-                        view: np.zeros((n_objs_to_pad[view]), dtype=np.bool)
+                        view: np.zeros((n_objs_to_pad[view]), dtype=bool)
                         for view in views
                     },
                 }
@@ -700,10 +700,13 @@ def collate_prompt_with_bbox(*, views, raw_prompt_list, cropped_img_size):
         word_batch
     ) + len(image_batch)
     word_batch = U.any_stack(word_batch, dim=0)
-    image_batch = U.any_to_datadict(U.stack_sequence_fields(image_batch))
-
     word_batch = U.any_to_torch_tensor(word_batch)
-    image_batch = image_batch.to_torch_tensor()
+
+    if len(image_batch) > 0:
+        image_batch = U.any_to_datadict(U.stack_sequence_fields(image_batch))
+        image_batch = image_batch.to_torch_tensor()
+    else:
+        image_batch = None
     return raw_prompt_token_type, word_batch, image_batch
 
 
@@ -758,7 +761,7 @@ def collate_obs_with_bbox(*, obs_list):
                 for view in views
             },
             "mask": {
-                view: np.zeros((L_obs, n_objs_pad), dtype=np.bool) for view in views
+                view: np.zeros((L_obs, n_objs_pad), dtype=bool) for view in views
             },
             "name": {
                 view: np.zeros((L_obs, n_objs_pad), dtype=np.int64) for view in views

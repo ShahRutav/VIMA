@@ -635,13 +635,15 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
         )
 
         # encode image batch
-        # n_img = len(list(image_batch["name"].values())[0])
-        # del image_batch["name"]
-        batch_image_emb = self.obj_encoder(
-            **image_batch
-        )  # (n_imgs, n_max_objs, embed_dim)
-        batch_image_emb = self.prompt_obj_post_layer(batch_image_emb)
-        n_max_objs = batch_image_emb.shape[-2]
+        if image_batch is not None:
+            if 'name' in image_batch.keys():
+                n_img = len(list(image_batch["name"].values())[0])
+                del image_batch["name"]
+            batch_image_emb = self.obj_encoder(
+                **image_batch
+            )  # (n_imgs, n_max_objs, embed_dim)
+            batch_image_emb = self.prompt_obj_post_layer(batch_image_emb)
+            n_max_objs = batch_image_emb.shape[-2]
 
         L_max = 0
         for raw_prompt in raw_prompts_token_type:
@@ -737,7 +739,8 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
             prompt_masks: (B, L_prompt)
         """
         objects, ee = obs["objects"], obs["ee"]
-        # del objects["name"]
+        if 'name' in objects.keys():
+            del objects["name"]
         leading_dims = ee.shape[:2]  # (L, B)
 
         # encode vision
@@ -894,6 +897,6 @@ class XAttnGPTObjAsTokenPolicy(LightningModule, BasePolicy):
         _, table_str = check_optimizer_groups(self, all_groups, verbose=True)
         rank_zero_info(table_str)
         return all_groups
-    
+
     def act(self):
         pass

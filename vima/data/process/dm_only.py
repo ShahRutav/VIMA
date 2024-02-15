@@ -608,7 +608,7 @@ def collate_fn_bbox(samples_list):
     # mask rotation for position only tasks
     rotation_mask = torch.zeros(B, dtype=bool)
     for task_name, batch_indices in task_name_to_batch_idx.items():
-        if task_name in ["rotate", "twist"]:
+        # if task_name in ["rotate", "twist"]:
             rotation_mask[batch_indices] = True
     rotation_mask = rotation_mask.unsqueeze(0).unsqueeze(-1)
     padded_action_mask["pose0_rotation"] = (
@@ -620,16 +620,16 @@ def collate_fn_bbox(samples_list):
 
     # discard z coordinate
     padded_action["pose0_position"] = U.any_slice(
-        padded_action["pose0_position"], np.s_[:, :, :-1]
+        padded_action["pose0_position"], np.s_[:, :, :2]
     )
     padded_action["pose1_position"] = U.any_slice(
-        padded_action["pose1_position"], np.s_[:, :, :-1]
+        padded_action["pose1_position"], np.s_[:, :, :2]
     )
     padded_action_mask["pose0_position"] = U.any_slice(
-        padded_action_mask["pose0_position"], np.s_[:, :, :-1]
+        padded_action_mask["pose0_position"], np.s_[:, :, :2]
     )
     padded_action_mask["pose1_position"] = U.any_slice(
-        padded_action_mask["pose1_position"], np.s_[:, :, :-1]
+        padded_action_mask["pose1_position"], np.s_[:, :, :2]
     )
 
     return (
@@ -736,7 +736,7 @@ def collate_fn_rgb_only(samples_list):
     # mask rotation for position only tasks
     rotation_mask = torch.zeros(B, dtype=bool)
     for task_name, batch_indices in task_name_to_batch_idx.items():
-        if task_name in ["rotate", "twist"]:
+        # if task_name in ["rotate", "twist"]:
             rotation_mask[batch_indices] = True
     rotation_mask = rotation_mask.unsqueeze(0).unsqueeze(-1)
     padded_action_mask["pose0_rotation"] = (
@@ -748,16 +748,16 @@ def collate_fn_rgb_only(samples_list):
 
     # discard z coordinate
     padded_action["pose0_position"] = U.any_slice(
-        padded_action["pose0_position"], np.s_[:, :, :-1]
+        padded_action["pose0_position"], np.s_[:, :, :2]
     )
     padded_action["pose1_position"] = U.any_slice(
-        padded_action["pose1_position"], np.s_[:, :, :-1]
+        padded_action["pose1_position"], np.s_[:, :, :2]
     )
     padded_action_mask["pose0_position"] = U.any_slice(
-        padded_action_mask["pose0_position"], np.s_[:, :, :-1]
+        padded_action_mask["pose0_position"], np.s_[:, :, :2]
     )
     padded_action_mask["pose1_position"] = U.any_slice(
-        padded_action_mask["pose1_position"], np.s_[:, :, :-1]
+        padded_action_mask["pose1_position"], np.s_[:, :, :2]
     )
 
     return (

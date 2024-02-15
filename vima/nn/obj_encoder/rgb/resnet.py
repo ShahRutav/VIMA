@@ -5,7 +5,7 @@ import torch.nn as nn
 from enlight.nn.vision.resnet import create_resnet
 from enlight.nn.mlp import build_mlp
 import enlight.utils as U
-from torchvision.models.resnet import model_urls
+# from torchvision.models.resnet import model_urls
 from torch.hub import load_state_dict_from_url
 
 from vima.nn.constant import VIMA_IMG_MEAN, VIMA_IMG_STD
