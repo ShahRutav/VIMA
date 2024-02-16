@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 
 import numpy as np
 from pytorch_lightning import LightningDataModule
@@ -6,7 +7,8 @@ from torch.utils.data import DataLoader, Dataset
 from vima import utils as U
 
 from .dataset import VIMADataset
-from .process.dm_only import collate_fn_bbox, collate_fn_rgb_only
+from .dataset_vlm import VLMDataset
+from .process.dm_only import collate_fn_bbox, collate_fn_rgb_only, collate_fn_vlm_rgb_only
 import json
 
 class VIMADataModule(LightningDataModule):
@@ -44,7 +46,7 @@ class VIMADataModule(LightningDataModule):
         self.cropped_img_size = cropped_img_size
         self._add_obj_aug = add_obj_aug
         self._obj_aug_prob_map = obj_aug_prob_map
-        
+
         self.num_trajs = num_trajs
         self.num_trajs_dict_path = num_trajs_dict_path
         with open(self.num_trajs_dict_path, 'r') as file:
@@ -95,7 +97,7 @@ class VIMADataModule(LightningDataModule):
             collate_fn=collate_fn_bbox if self.use_bbox_repr else collate_fn_rgb_only,
             num_workers=min(self._batch_size, self._num_workers),
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=True if self._num_workers > 0 else False,
         )
 
     def val_dataloader(self):
@@ -105,7 +107,7 @@ class VIMADataModule(LightningDataModule):
             collate_fn=collate_fn_bbox if self.use_bbox_repr else collate_fn_rgb_only,
             num_workers=min(self._batch_size, self._num_workers),
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=True if self._num_workers > 0 else False,
         )
 
     def test_dataloader(self):
@@ -141,6 +143,59 @@ class VIMADataModule(LightningDataModule):
     def tokenizer(self):
         return self._dataset.tokenizer
 
+class VLMDataModule(VIMADataModule):
+    def __init__(self, *args, **kwargs):
+        # if tokenizer not in the kwargs
+        self._model_name = kwargs.pop("model_name")
+        super().__init__(*args, **kwargs)
+
+    def setup(self, stage: str | None = None, setup_data: bool = True) -> None:
+        if stage == "fit" or stage is None:
+            self._dataset = VLMDataset(
+                path=self.path,
+                tokenizer_add_special_tokens=self.tokenizer_add_special_tokens,
+                model_name=self._model_name,
+                t5_prompt_prefix=self._t5_prompt_prefix,
+                use_bbox_repr=self.use_bbox_repr,
+                cropped_img_size=self.cropped_img_size,
+                num_trajs=self.num_trajs,
+                num_trajs_dict=self.num_trajs_dict,
+                seed=self.seed,
+                task_selection=self.task_selection,
+                add_obj_aug=self._add_obj_aug,
+                obj_aug_prob_map=self._obj_aug_prob_map,
+                train_on_unseen_task_for_finetune=self._train_on_unseen_task_for_finetune,
+                setup_data=setup_data,
+                bbox_from_detection_model=self._bbox_from_detection_model,
+                detection_model=self.detection_model,
+            )
+            if setup_data:
+                self._train_set, self._val_set = U.sequential_split_dataset(
+                    self._dataset,
+                    split_portions=[self._train_portion, 1 - self._train_portion],
+                )
+
+    def train_dataloader(self):
+        # shuffle=True will be added by distributed sampler,
+        # set `replace_sampler_ddp=True`  for Lightning trainer
+        return DataLoader(
+            self._train_set,
+            batch_size=self._batch_size,
+            collate_fn=partial(collate_fn_vlm_rgb_only, tokenizer=self._dataset.processor.tokenizer),
+            num_workers=min(self._batch_size, self._num_workers),
+            pin_memory=True,
+            persistent_workers=True if self._num_workers > 0 else False,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self._val_set,
+            batch_size=self._val_batch_size,
+            collate_fn=partial(collate_fn_vlm_rgb_only, tokenizer=self._dataset.processor.tokenizer),
+            num_workers=min(self._batch_size, self._num_workers),
+            pin_memory=True,
+            persistent_workers=True if self._num_workers > 0 else False,
+        )
 
 class DummyDataset(Dataset):
     """

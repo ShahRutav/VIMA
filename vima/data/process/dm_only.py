@@ -1,10 +1,12 @@
 from __future__ import annotations
 from typing import Literal
 from copy import deepcopy
+from functools import partial
 
 import torch
 import numpy as np
 from tokenizers import Tokenizer
+from transformers import ProcessorMixin
 import vima.utils as U
 
 from .common import (
@@ -15,8 +17,11 @@ from .common import (
     prepare_obs_with_bbox_from_detection,
     collate_obs_with_bbox,
     prepare_prompt_rgb_only,
+    prepare_vlm_prompt_rgb_only,
     prepare_obs_rgb_only,
+    prepare_vlm_obs_rgb_only,
     collate_prompt_rgb_only,
+    collate_vlm_prompt_rgb_only,
     collate_obs_rgb_only,
 )
 from ..constants import OBJ_NAME_TO_ID, PLACEHOLDERS
@@ -286,6 +291,69 @@ def prepare_sample_bbox(
             )
     return obs_rtn, action, filled_prompt
 
+def prepare_sample_vlm_rgb_only(
+    *,
+    obs: dict,
+    rgb_dict: dict | None = None,
+    action: dict,
+    action_position_bounds: dict[str, np.ndarray],
+    prompt: str | None,
+    prompt_assets: dict | None,
+    meta: dict,
+    tokenizer: Tokenizer,
+    processor: ProcessorMixin,
+    add_special_tokens: bool,
+):
+    # get number of time-steps
+    L = U.get_batch_size(obs) - 1
+    assert L == U.get_batch_size(action) == meta["steps"]
+
+    obs_rtn = prepare_vlm_obs_rgb_only(
+        obs=obs,
+        rgb_dict=rgb_dict,
+        img_h=256, img_w=256,
+    )
+
+    # normalize action to [0, 1]
+    # normalize position with action_position_bounds
+    action["pose0_position"] = (
+        action["pose0_position"] - action_position_bounds["low"]
+    ) / (action_position_bounds["high"] - action_position_bounds["low"])
+    action["pose1_position"] = (
+        action["pose1_position"] - action_position_bounds["low"]
+    ) / (action_position_bounds["high"] - action_position_bounds["low"])
+    # check all normalized positions are in [0, 1]
+    assert np.all(action["pose0_position"] >= 0) and np.all(
+        action["pose0_position"] <= 1
+    )
+    assert np.all(action["pose1_position"] >= 0) and np.all(
+        action["pose1_position"] <= 1
+    )
+    # normalize rotation
+    # rotation is represented in quaternion in [-1, 1]
+    action["pose0_rotation"] = (action["pose0_rotation"] + 1) / 2
+    action["pose1_rotation"] = (action["pose1_rotation"] + 1) / 2
+    # check all normalized rotations are in [0, 1]
+    assert np.all(action["pose0_rotation"] >= 0) and np.all(
+        action["pose0_rotation"] <= 1
+    )
+    assert np.all(action["pose1_rotation"] >= 0) and np.all(
+        action["pose1_rotation"] <= 1
+    )
+
+    # tokenize prompt
+    # bypass None case because this function is also used in eval rollout, where we prepare prompt once and cache it
+    if prompt is None:
+        filled_prompt = None
+    else:
+        filled_prompt = prepare_vlm_prompt_rgb_only(
+            rgb=deepcopy(obs_rtn['rgb']),
+            text_prompt=prompt,
+            prompt_assets=prompt_assets,
+            processor=processor,
+            add_special_tokens=add_special_tokens,
+        )
+    return obs_rtn, action, filled_prompt
 
 def prepare_sample_rgb_only(
     *,
@@ -765,5 +833,133 @@ def collate_fn_rgb_only(samples_list):
         padded_action,
         padded_action_mask,
         (raw_prompt_token_type, word_batch, image_batch),
+        task_name_to_batch_idx,
+    )
+
+def collate_fn_vlm_rgb_only(samples_list, tokenizer):
+    B = len(samples_list)
+    # Lp1_max = max([U.get_batch_size(obs, strict=True) for obs, _, _, _ in samples_list])
+    L_max = max(
+        [U.get_batch_size(action, strict=True) for _, action, _, _ in samples_list]
+    )
+    # assert L_max + 1 == Lp1_max
+
+    # obs_list = [sample[0] for sample in samples_list]
+    # padded_obs = collate_obs_rgb_only(obs_list=obs_list)
+
+    # pad each trajectory to L_max in this batch
+    # note that we slice instead of index to keep the first dim
+    if samples_list[0][1] is not None:
+        action_structure = deepcopy(U.any_slice(samples_list[0][1], np.s_[0:1]))
+    else:
+        action_structure = None
+    # bypass None case because this function will be used in rollout eval, where the first obs has no action yet
+    if samples_list[0][1] is not None:
+        padded_action = U.any_to_datadict(
+            U.any_stack(
+                [
+                    U.any_concat(
+                        [sample[1]]
+                        + [U.any_zeros_like(action_structure)]
+                        * (L_max - U.get_batch_size(sample[1])),
+                        dim=0,
+                    )
+                    for sample in samples_list
+                ],
+                dim=0,
+            )
+        )
+    else:
+        padded_action = None
+
+    # construct action_mask
+    if samples_list[0][1] is not None:
+        padded_action_mask = U.any_to_datadict(
+            U.any_stack(
+                [
+                    U.any_concat(
+                        [U.any_ones_like(action_structure)]
+                        * U.get_batch_size(sample[1])
+                        + [U.any_zeros_like(action_structure)]
+                        * (L_max - U.get_batch_size(sample[1]))
+                    )
+                    for sample in samples_list
+                ],
+                dim=0,
+            )
+        )
+        padded_action_mask.map_structure(lambda x: x.astype(bool), inplace=True)
+    else:
+        padded_action_mask = None
+
+    # collect prompt
+    # bypass None case because prompt only need to be prepared once
+    if samples_list[0][2] is not None:
+        prompt_batch = collate_vlm_prompt_rgb_only(
+            raw_prompt_list=[sample[2] for sample in samples_list],
+            tokenizer=tokenizer,
+        )
+    else:
+        prompt_batch = None
+
+    # convert to tensor and make L the first dim
+    if padded_action is not None:
+        padded_action = padded_action.to_torch_tensor()
+        padded_action = U.any_transpose_first_two_axes(padded_action)
+    if padded_action_mask is not None:
+        padded_action_mask = padded_action_mask.to_torch_tensor()
+        padded_action_mask = U.any_transpose_first_two_axes(padded_action_mask)
+
+    if padded_action is not None:
+        assert U.get_batch_size(padded_action, strict=True) == L_max
+        assert U.get_batch_size(U.any_slice(padded_action, np.s_[0]), strict=True) == B
+    if padded_action_mask is not None:
+        assert U.get_batch_size(padded_action_mask, strict=True) == L_max
+        assert (
+            U.get_batch_size(U.any_slice(padded_action_mask, np.s_[0]), strict=True)
+            == B
+        )
+
+    task_names = [sample[3] for sample in samples_list]
+    # dedupe task names and collect batch indices
+    task_names_dedupe = list(set(task_names))
+    task_names_dedupe.sort()
+    task_name_to_batch_idx = {
+        task_name: [i for i, t in enumerate(task_names) if t == task_name]
+        for task_name in task_names_dedupe
+    }
+
+    # mask rotation for position only tasks
+    rotation_mask = torch.zeros(B, dtype=bool)
+    for task_name, batch_indices in task_name_to_batch_idx.items():
+        # if task_name in ["rotate", "twist"]:
+            rotation_mask[batch_indices] = True
+    rotation_mask = rotation_mask.unsqueeze(0).unsqueeze(-1)
+    padded_action_mask["pose0_rotation"] = (
+        padded_action_mask["pose0_rotation"] * rotation_mask
+    )
+    padded_action_mask["pose1_rotation"] = (
+        padded_action_mask["pose1_rotation"] * rotation_mask
+    )
+
+    # discard z coordinate
+    padded_action["pose0_position"] = U.any_slice(
+        padded_action["pose0_position"], np.s_[:, :, :2]
+    )
+    padded_action["pose1_position"] = U.any_slice(
+        padded_action["pose1_position"], np.s_[:, :, :2]
+    )
+    padded_action_mask["pose0_position"] = U.any_slice(
+        padded_action_mask["pose0_position"], np.s_[:, :, :2]
+    )
+    padded_action_mask["pose1_position"] = U.any_slice(
+        padded_action_mask["pose1_position"], np.s_[:, :, :2]
+    )
+
+    return (
+        None, # padded_obs
+        padded_action,
+        padded_action_mask,
+        prompt_batch,
         task_name_to_batch_idx,
     )

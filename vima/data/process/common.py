@@ -3,9 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 
 import numpy as np
+import torch
 from tokenizers import Tokenizer
 from einops import rearrange
 import cv2
+from PIL import Image
 import vima.utils as U
 
 from ..constants import OBJ_NAME_TO_ID, PLACEHOLDERS
@@ -262,6 +264,50 @@ def prepare_prompt_with_bbox(
             filled_prompt.append(obj_repr)
     return filled_prompt
 
+def prepare_vlm_prompt_rgb_only(
+    *,
+    view: str = 'top',
+    rgb: dict,
+    text_prompt: str,
+    prompt_assets: dict,
+    processor: ProcessorMixin,
+    add_special_tokens: bool,
+):
+    images = [Image.fromarray(rearrange(img, "c h w -> h w c")) for img in rgb[view]]
+    print(text_prompt)
+    # we do not maintain any history. Each image will be randomly sampled in the collate_fn
+    filled_prompt = processor(text=[text_prompt]*len(images), images=images, return_tensors="pt")
+    # prompt_ids, prompt_tokens = encoding.ids, encoding.tokens
+    # assert set(prompt_assets.keys()) == set(
+    #     [token[1:-1] for token in prompt_tokens if token in PLACEHOLDERS]
+    # )
+    # filled_prompt = []
+    # for id, token in zip(prompt_ids, prompt_tokens):
+    #     if token not in PLACEHOLDERS:
+    #         # an indexed word
+    #         assert "{" not in token and "}" not in token
+    #         filled_prompt.append(id)
+    #     else:
+    #         # a multimodal placeholder
+    #         assert token.startswith("{") and token.endswith("}")
+    #         asset_name = token[1:-1]
+    #         assert asset_name in prompt_assets, f"missing prompt asset {asset_name}"
+    #         asset = prompt_assets[asset_name]
+    #         # resize to (64, 128)
+    #         rgb = {
+    #             k: rearrange(
+    #                 cv2.resize(
+    #                     np.asarray(rearrange(v, "c h w -> h w c")),
+    #                     (128, 64),
+    #                     interpolation=cv2.INTER_AREA,
+    #                 ),
+    #                 "h w c -> c h w",
+    #             )
+    #             for k, v in asset["rgb"].items()
+    #         }
+    #         obj_repr = {"rgb": rgb}
+    #         filled_prompt.append(obj_repr)
+    return filled_prompt
 
 def prepare_prompt_rgb_only(
     *,
@@ -597,6 +643,43 @@ def prepare_obs_with_bbox(
 
     return obs_rtn
 
+def prepare_vlm_obs_rgb_only(
+    *,
+    obs: dict,
+    rgb_dict: dict | None = None,
+    img_h: int, img_w: int,
+):
+    assert not (rgb_dict is not None and "rgb" in obs)
+    rgb_dict = rgb_dict or obs.pop("rgb")
+    L_ee = U.get_batch_size(obs["ee"], strict=True)
+    L_rgb = U.get_batch_size(rgb_dict, strict=True)
+    if L_ee > L_rgb:
+        obs["ee"] = U.any_slice(obs["ee"], np.s_[:L_rgb])
+    elif L_ee < L_rgb:
+        rgb_dict = U.any_slice(rgb_dict, np.s_[:L_ee])
+    rgb_dict = {
+        k: U.any_stack(
+            [
+                np.pad(
+                    x,
+                    (
+                        (0, 0),
+                        (max(0, (img_h - x.shape[1]) // 2), max(0, (img_h - x.shape[1]) // 2)),
+                        (max(0, (img_w - x.shape[2]) // 2), max(0, (img_w - x.shape[2]) // 2)),
+                    ),
+                    mode="constant", constant_values=255,
+                ) for x in v
+            ],
+            dim=0,
+        )
+        for k, v in rgb_dict.items()
+    }
+    # process obs
+    obs_rtn = {
+        "ee": obs["ee"],
+        "rgb": rgb_dict,
+    }
+    return obs_rtn
 
 def prepare_obs_rgb_only(
     *,
@@ -709,6 +792,40 @@ def collate_prompt_with_bbox(*, views, raw_prompt_list, cropped_img_size):
         image_batch = None
     return raw_prompt_token_type, word_batch, image_batch
 
+def pad_sequence(sequences, batch_first=False, padding_value=0, padding_side="right"):
+    max_size = max([seq.size(0) for seq in sequences])
+    out_dims = (len(sequences), max_size) + sequences[0].size()[1:]
+    out_tensor = sequences[0].data.new(*out_dims).fill_(padding_value)
+    if padding_side == "right":
+        for i, tensor in enumerate(sequences):
+            length = tensor.size(0)
+            if batch_first:
+                out_tensor[i, :length, ...] = tensor
+            else:
+                out_tensor[:length, ...] = tensor
+    elif padding_side == "left":
+        for i, tensor in enumerate(sequences):
+            length = tensor.size(0)
+            if batch_first:
+                out_tensor[i, -length:, ...] = tensor
+            else:
+                out_tensor[-length:, ...] = tensor
+    return out_tensor
+
+def collate_vlm_prompt_rgb_only(*, tokenizer, raw_prompt_list):
+    sample_indices = [np.random.choice(len(prompt['input_ids'])) for prompt in raw_prompt_list]
+    # there are input_ids, attention_mask, pixel_values
+    # pad input_ids and make corresponding attention_mask
+    input_ids = [prompt['input_ids'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
+    attention_mask = [prompt['attention_mask'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
+    pixel_values = [prompt['pixel_values'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
+
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=tokenizer.pad_token_id, padding_side=tokenizer.padding_side)
+    attention_mask = pad_sequence(attention_mask, batch_first=True, padding_value=0, padding_side=tokenizer.padding_side)
+    pixel_values = torch.stack(pixel_values, dim=0)
+
+    batch = {'input_ids': input_ids, 'attention_mask': attention_mask, 'pixel_values': pixel_values}
+    return batch
 
 def collate_prompt_rgb_only(*, raw_prompt_list):
     raw_prompt_token_type, word_batch, image_batch = [], [], []
@@ -726,10 +843,11 @@ def collate_prompt_rgb_only(*, raw_prompt_list):
         word_batch
     ) + len(image_batch)
     word_batch = U.any_stack(word_batch, dim=0)
-    image_batch = U.any_to_datadict(U.stack_sequence_fields(image_batch))
-
     word_batch = U.any_to_torch_tensor(word_batch)
-    image_batch = image_batch.to_torch_tensor()
+
+    if len(image_batch) > 0:
+        image_batch = U.any_to_datadict(U.stack_sequence_fields(image_batch))
+        image_batch = image_batch.to_torch_tensor()
     return raw_prompt_token_type, word_batch, image_batch
 
 

@@ -8,6 +8,7 @@ from enlight.learn import (
     transformer_freeze_except_last_layers,
     transformer_lr_decay_optimizer_groups,
 )
+from torch.utils import checkpoint
 from transformers.models.t5.modeling_t5 import (
     T5Attention as _T5Attention,
     T5LayerNorm,
@@ -15,7 +16,6 @@ from transformers.models.t5.modeling_t5 import (
     logger,
     T5PreTrainedModel,
     get_device_map,
-    checkpoint,
     BaseModelOutputWithPastAndCrossAttentions,
     assert_device_map,
     BaseModelOutput,
