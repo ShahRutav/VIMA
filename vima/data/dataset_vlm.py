@@ -23,8 +23,8 @@ class VLMDataset(Dataset):
         self,
         path: str,
         tokenizer_add_special_tokens: bool,
+        prompt_file: str,
         model_name: str = "distilbert-base-uncased",
-        t5_prompt_prefix: str | None = None,
         use_bbox_repr: bool = True,
         cropped_img_size: int = 224,
         num_trajs: int | None = None,
@@ -43,7 +43,7 @@ class VLMDataset(Dataset):
         _n_added_tokens = self.processor.tokenizer.add_tokens(PLACEHOLDER_TOKENS)
         assert _n_added_tokens == len(PLACEHOLDER_TOKENS), "INTERNAL"
         self.tokenizer = self.processor.tokenizer
-        self._t5_prompt_prefix = t5_prompt_prefix or None
+        self.prompt_template = open(prompt_file, "r").read()
 
         random_state = np.random.RandomState(seed)
 
@@ -153,9 +153,8 @@ class VLMDataset(Dataset):
         action = U.load_pickle(U.f_join(traj_path, "action.pkl"))
         traj_meta = U.load_pickle(U.f_join(traj_path, "trajectory.pkl"))
         action_bounds = traj_meta["action_bounds"]
-        prompt = traj_meta.pop("prompt")
-        if self._t5_prompt_prefix is not None:
-            prompt = self._t5_prompt_prefix + " " + prompt
+        traj_prompt = traj_meta.pop("prompt")
+        prompt = self.prompt_template.format(traj_prompt)
         prompt_assets = traj_meta.pop("prompt_assets")
         obs, action, filled_prompt = prepare_sample_vlm_rgb_only(
             obs=obs,

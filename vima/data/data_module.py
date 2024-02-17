@@ -147,6 +147,7 @@ class VLMDataModule(VIMADataModule):
     def __init__(self, *args, **kwargs):
         # if tokenizer not in the kwargs
         self._model_name = kwargs.pop("model_name")
+        self._prompt_file = kwargs.pop("prompt_file")
         super().__init__(*args, **kwargs)
 
     def setup(self, stage: str | None = None, setup_data: bool = True) -> None:
@@ -155,7 +156,6 @@ class VLMDataModule(VIMADataModule):
                 path=self.path,
                 tokenizer_add_special_tokens=self.tokenizer_add_special_tokens,
                 model_name=self._model_name,
-                t5_prompt_prefix=self._t5_prompt_prefix,
                 use_bbox_repr=self.use_bbox_repr,
                 cropped_img_size=self.cropped_img_size,
                 num_trajs=self.num_trajs,
@@ -168,6 +168,7 @@ class VLMDataModule(VIMADataModule):
                 setup_data=setup_data,
                 bbox_from_detection_model=self._bbox_from_detection_model,
                 detection_model=self.detection_model,
+                prompt_file=self._prompt_file,
             )
             if setup_data:
                 self._train_set, self._val_set = U.sequential_split_dataset(

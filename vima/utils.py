@@ -1,4 +1,5 @@
 import os
+import torch
 import collections
 import pickle
 import numpy as np
@@ -25,6 +26,12 @@ __all__ = [
     "add_batch_dim",
 ]
 
+def get_torch_dtype(dtype):
+    if dtype=='fp32': return torch.float32
+    elif dtype=='fp16': return torch.float16
+    elif dtype=='bfp16': return torch.bfloat16
+    else: raise ValueError(f"Unknown dtype {dtype}")
+
 def f_join(*args):
     return os.path.join(*args)
 
@@ -46,7 +53,7 @@ def any_zeros_like(xs: dict):
             return dict(map(lambda item: (item[0], zeros_like(item[1])), arr.items()))
         else:
             print("ERROR TYPE: ", type(arr))
-            raise NotImplementedError 
+            raise NotImplementedError
     return dict(map(lambda item: (item[0], zeros_like(item[1])), xs.items()))
 
 def any_ones_like(xs: dict):
@@ -57,7 +64,7 @@ def any_ones_like(xs: dict):
             return dict(map(lambda item: (item[0], ones_like(item[1])), arr.items()))
         else:
             print("ERROR TYPE: ", type(arr))
-            raise NotImplementedError 
+            raise NotImplementedError
     return dict(map(lambda item: (item[0], ones_like(item[1])), xs.items()))
 
 def any_concat(xs: list, *, dim: int = 0):

@@ -274,7 +274,6 @@ def prepare_vlm_prompt_rgb_only(
     add_special_tokens: bool,
 ):
     images = [Image.fromarray(rearrange(img, "c h w -> h w c")) for img in rgb[view]]
-    print(text_prompt)
     # we do not maintain any history. Each image will be randomly sampled in the collate_fn
     filled_prompt = processor(text=[text_prompt]*len(images), images=images, return_tensors="pt")
     # prompt_ids, prompt_tokens = encoding.ids, encoding.tokens
@@ -812,19 +811,24 @@ def pad_sequence(sequences, batch_first=False, padding_value=0, padding_side="ri
                 out_tensor[-length:, ...] = tensor
     return out_tensor
 
-def collate_vlm_prompt_rgb_only(*, tokenizer, raw_prompt_list):
-    sample_indices = [np.random.choice(len(prompt['input_ids'])) for prompt in raw_prompt_list]
+def collate_vlm_prompt_rgb_only(*, tokenizer, raw_prompt_list, sample_indices):
     # there are input_ids, attention_mask, pixel_values
     # pad input_ids and make corresponding attention_mask
-    input_ids = [prompt['input_ids'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
-    attention_mask = [prompt['attention_mask'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
-    pixel_values = [prompt['pixel_values'][sample_idx] for prompt, sample_idx in zip(raw_prompt_list, sample_indices)]
+    assert len(raw_prompt_list) == len(sample_indices)
+    raw_prompt = [U.any_slice(prompt, np.s_[i]) for prompt, i in zip(raw_prompt_list, sample_indices)]
 
+    input_ids = [prompt["input_ids"] for prompt in raw_prompt]
+    attention_mask = [prompt["attention_mask"] for prompt in raw_prompt]
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=tokenizer.pad_token_id, padding_side=tokenizer.padding_side)
     attention_mask = pad_sequence(attention_mask, batch_first=True, padding_value=0, padding_side=tokenizer.padding_side)
-    pixel_values = torch.stack(pixel_values, dim=0)
 
-    batch = {'input_ids': input_ids, 'attention_mask': attention_mask, 'pixel_values': pixel_values}
+    for ind in range(len(raw_prompt)):
+        raw_prompt[ind]["input_ids"] = input_ids[ind]
+        raw_prompt[ind]["attention_mask"] = attention_mask[ind]
+
+    batch = U.any_to_datadict(
+        U.any_stack(raw_prompt, dim=0)
+    )
     return batch
 
 def collate_prompt_rgb_only(*, raw_prompt_list):

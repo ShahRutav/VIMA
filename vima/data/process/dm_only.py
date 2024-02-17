@@ -849,6 +849,8 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
 
     # pad each trajectory to L_max in this batch
     # note that we slice instead of index to keep the first dim
+    # Add the code below to handle multiple actions in the same batch. Currently we using only predicting one action.
+    '''
     if samples_list[0][1] is not None:
         action_structure = deepcopy(U.any_slice(samples_list[0][1], np.s_[0:1]))
     else:
@@ -891,13 +893,28 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         padded_action_mask.map_structure(lambda x: x.astype(bool), inplace=True)
     else:
         padded_action_mask = None
-
+    '''
+    # this will always be 0 in for trajectory of length 1
+    sample_indices = [np.random.choice(U.get_batch_size(action, strict=True)) for _, action, _, _ in samples_list]
+    # actions are of shape [L, dim]
+    # here instead of padding, we slice the action to sample only one action at a time
+    padded_action = U.any_to_datadict(
+        U.any_stack(
+            [
+                 U.any_slice(sample[1], np.s_[i:i+1]) \
+                    for sample, i in zip(samples_list, sample_indices)
+            ],
+            dim=0,
+        )
+    )
+    padded_action_mask = U.any_to_datadict(U.any_ones_like(padded_action))
     # collect prompt
     # bypass None case because prompt only need to be prepared once
     if samples_list[0][2] is not None:
         prompt_batch = collate_vlm_prompt_rgb_only(
             raw_prompt_list=[sample[2] for sample in samples_list],
             tokenizer=tokenizer,
+            sample_indices=sample_indices,
         )
     else:
         prompt_batch = None

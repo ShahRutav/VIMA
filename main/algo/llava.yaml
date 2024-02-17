@@ -1,0 +1,50 @@
+# @package _global_
+
+arch: "xattn_obj_token_2M"
+wandb_project: "vima"
+
+module:
+  cls: ActionGPTModule
+  policy:
+    cls: vima.policy.xattn.vlm_as_policy.VLMPolicy
+    # ====== model ======
+    embed_dim: 256
+    # # ...... objects ......
+    img_views: ["top"]
+    # ...... end effector state ......
+    end_effector_emb_dim: 2
+    # ------ action encoder ------
+    action_encoder_emb_dim: 256
+    action_encoder_hidden_depth: 1
+    use_continuous_action_encoder_despite_discrete_output: true
+    # ------ prompt encoder ------
+    prompt_emb_pretrained_lm: ${module.policy.model_name}
+    # ------ vlm model acting as prompt encoder ------
+    model_name: llava-hf/llava-1.5-7b-hf
+    revision: 05ae2434cbb430be33edcba0c5203e7023f785b7
+    vlm_head_type: linear
+    vlm_last_n_feats: 1
+    torch_dtype: bfp16 # TODO: This should be used by trainer as well for mixed precision training
+    load_in_4bit: True
+    bnb_4bit_use_double_quant: True
+    bnb_4bit_quant_type: nf4
+    # ------ action decoder ------
+    action_decoder_hidden_dim: 512
+    action_decoder_hidden_depth: 2
+    action_decoder_activation: "relu"
+    action_decoder_norm_type: null
+    action_decoder_last_layer_gain: 0.01
+    # ====== learning ======
+    # ------ action type ------
+    action_type: "discrete"
+    n_discrete_x_bins: 50
+    n_discrete_y_bins: 100
+    n_discrete_z_bins: 50
+    n_discrete_rot_bins: 50
+    # ------ loss weights ------
+    sub_action_loss_weights: null
+
+data_module:
+  tokenizer_add_special_tokens: true
+  tokenizer: "t5-base"
+  t5_prompt_prefix: null
