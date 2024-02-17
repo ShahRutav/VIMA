@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from termcolor import colored
+import peft
+import transformers
 from pytorch_lightning import LightningModule
 from transformers import BitsAndBytesConfig
 
@@ -32,11 +34,20 @@ class VLMPolicy(LightningModule, BasePolicy):
         model_name: str,
         revision: str,
         torch_dtype: str,
-        vlm_head_type: Literal["linear", "mlp_block", "default"],
         vlm_last_n_feats: int,
         load_in_4bit: bool,
         bnb_4bit_use_double_quant: bool,
         bnb_4bit_quant_type: str,
+        # vlm head that projects the vlm hidden state to the embed_dim
+        vlm_head_type: Literal["linear", "mlp_block", "default"],
+        # ......... finetuning configs .........
+        # LORA configs
+        use_lora: bool,
+        lora_rank: int = 32,
+        lora_alpha: int = 64,
+        lora_dropout: float = 0.05,
+        lora_target_modules: list[str] = None,
+        lora_only_last_n_layers: int = -1,
         # ...... objects ......
         img_views: list[str],
         # ...... end effector state ......
@@ -259,13 +270,32 @@ class VLMPolicy(LightningModule, BasePolicy):
                 revision=revision,
                 quantization_config=bnb_config,
                 torch_dtype=torch_dtype,
-                head_type=vlm_head_type,
                 last_n_feats=vlm_last_n_feats,
         )
-        # the _setup head needs to be called separately since .from_pretrained avoids init? Not sure.
-        # If we keep the prepare_model_for_kbit_training, here then it leads to some memory leakage.
-        # Wrap the whole model in the training loop instead.
-        self.vlm_model._setup_head(hidden_size=self.vlm_model.vlm_hidden_size, head_output_dim=embed_dim)
+        # we keep this before the model is wrapped with trainable additional parameters
+        self.vlm_model = peft.prepare_model_for_kbit_training(self.vlm_model)
+        if use_lora:
+            lora_config = peft.LoraConfig(
+                r=lora_rank,
+                lora_alpha=2*lora_alpha,
+                lora_dropout=0.05,
+                bias="none",
+                target_modules=lora_target_modules,
+                layers_to_transform=self.vlm_model.get_lora_layers_to_transform(lora_only_last_n_layers) if lora_only_last_n_layers > 0 else None,
+                task_type=peft.TaskType.CAUSAL_LM,
+            )
+            self.vlm_model = peft.get_peft_model(self.vlm_model, lora_config)
+
+        if vlm_head_type == "mlp_block":
+            self.vlm_head = vnn.MLP(
+                    input_dim=self.vlm_model.vlm_hidden_size,
+                    hidden_dim=self.vlm_model.vlm_hidden_size,
+                    output_dim=embed_dim,
+                    hidden_depth=0,
+                    norm_type='layernorm',
+            )
+        else:
+            raise ValueError(f"Unknown vlm_head_type {vlm_head_type}")
 
         if action_type == "discrete":
             if sub_action_loss_weights is None:
@@ -486,15 +516,23 @@ class VLMPolicy(LightningModule, BasePolicy):
         prompt_token: batch first dictionary
         action_token and prompt_token: (L, B, E)
         """
-        # vlm_feats are of shape (B, E)
-        # logits are actually the projections from changed lm_head
-        vlm_feats = self.vlm_model(**prompt_dict).logits
+        # output all the hidden states is very memory inefficient.
+        # TODO: Alternative: Replace lm_head with identiy and the use the last hidden state by accessing logits.
+        vlm_feats = self.vlm_model(
+                **prompt_dict,
+                output_last_hidden_state=True,
+                return_dict=True,
+        )
+        vlm_feats = vlm_feats.last_hidden_state
         # # make a dummy feats for now
-        # vlm_feats = torch.zeros(action_token.shape[1], self.embed_dim).to(self.device)
+        # vlm_feats = torch.zeros(action_token.shape[1], 1, self.embed_dim).to(self.device)
 
-        # B, E -> L, B, E
-        vlm_feats = vlm_feats.unsqueeze(0).expand(action_token.shape[0]+1, -1, -1)
-
+        if vlm_feats.shape[1] > 1:
+            vlm_feats = vlm_feats.mean(dim=1, keepdim=True)
+        # B, 1, E -> B, 1, e
+        vlm_feats = self.vlm_head(vlm_feats)
+        # B, 1, e -> 1, B, e -> L, B, e
+        vlm_feats = U.any_transpose_first_two_axes(vlm_feats).expand(action_token.shape[0]+1, -1, -1)
         return vlm_feats
 
     def forward_action_token(self, action):
@@ -590,6 +628,7 @@ class VLMPolicy(LightningModule, BasePolicy):
             no_decay_filter=[
                 "action_encoder.*",
                 "action_decoder.*",
+                "vlm_head.*",
             ],
             exclude_filter=lambda name, p: id(p) in vlm_pids,
         )

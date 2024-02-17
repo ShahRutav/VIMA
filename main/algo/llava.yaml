@@ -22,12 +22,20 @@ module:
     # ------ vlm model acting as prompt encoder ------
     model_name: llava-hf/llava-1.5-7b-hf
     revision: 05ae2434cbb430be33edcba0c5203e7023f785b7
-    vlm_head_type: linear
     vlm_last_n_feats: 1
     torch_dtype: bfp16 # TODO: This should be used by trainer as well for mixed precision training
     load_in_4bit: True
     bnb_4bit_use_double_quant: True
     bnb_4bit_quant_type: nf4
+    vlm_head_type: mlp_block
+    # -------------- lora configs ---------------------
+    use_lora: True
+    lora_rank: 32
+    lora_alpha: 64
+    lora_dropout: 0.05
+    lora_target_modules: ['q_proj', 'k_proj', 'v_proj', 'o_proj']
+    lora_only_last_n_layers: -1
+
     # ------ action decoder ------
     action_decoder_hidden_dim: 512
     action_decoder_hidden_depth: 2

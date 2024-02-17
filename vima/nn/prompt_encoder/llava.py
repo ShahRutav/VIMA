@@ -1,12 +1,26 @@
+from dataclasses import dataclass
+from typing import Optional, List, Tuple
+
 import torch
 import torch.nn as nn
+import peft
 from enlight.learn import transformer_lr_decay_optimizer_groups, default_optimizer_groups
 
+from transformers.modeling_outputs import ModelOutput
 from transformers import LlavaForConditionalGeneration
 
+@dataclass
+class LlavaPromptEncoderCausalLMOutputWithPast(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    past_key_values: Optional[List[torch.FloatTensor]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    image_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
+
 class LlavaPromptEncoder(LlavaForConditionalGeneration):
-    def __init__(self, config, head_type='linear', last_n_feats=1):
-        self._head_type = head_type
+    def __init__(self, config, last_n_feats=1):
         self._last_n_feats = last_n_feats
         self._setup_is_once = False
         self._hidden_size = 4096
@@ -16,45 +30,30 @@ class LlavaPromptEncoder(LlavaForConditionalGeneration):
     def vlm_hidden_size(self):
         return self._hidden_size
 
-    def _setup_head(self, hidden_size, head_output_dim):
-        if self._setup_is_once:
-            raise ValueError("Setup can only be called once")
-        if self._head_type == "linear":
-            self.language_model.lm_head = nn.Linear(hidden_size, head_output_dim, bias=True)
-        elif self._head_type == "mlp_block":
-            self.language_model.lm_head = nn.Sequential(
-                nn.Linear(hidden_size, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, head_output_dim)
-            )
-        else:
-            raise ValueError(f"Head type {self._head_type} not supported")
-        self.language_model.lm_head.to(self.device)
-        self._setup_is_once = True
-
-    def generate(self, *args, **kwargs):
-        # override the generate method to return the regression output
-        max_new_tokens = kwargs.pop("max_new_tokens", None)
-        output = self.forward(*args, **kwargs)
-        return output
-
-    def get_ft_layer_names(self):
-        return ["language_model.lm_head"]
-
-    def forward(self, labels=None, *args, **kwargs):
-        assert self._setup_is_once, "Setup must be called before forward"
+    def forward(self, *args, **kwargs):
+        last_hidden_state = None
+        output_last_hidden_state = kwargs.pop("output_last_hidden_state", False)
+        kwargs["output_hidden_states"] = True if output_last_hidden_state else kwargs["output_hidden_states"]
         output = super().forward(*args, **kwargs)
-        # output is of shape [b, t, e]
-        output.logits = output.logits[:, :-self._last_n_feats, :]
-        output.logits = torch.mean(output.logits, dim=1, keepdim=False) # TODO: maybe remove this or optional.
-        # if labels is not None:
-        #     pred = output.logits
-        #     # calculate the loss with the labels which are of shape b,4
-        #     # assert shape of labels and output is same
-        #     assert labels.shape == pred.shape
-        #     loss = nn.MSELoss()(pred, labels)
-        #     output.loss = loss
-        return output
+        last_hidden_state = None
+        if output_last_hidden_state:
+            last_hidden_state = output.hidden_states[-1][:, -self._last_n_feats:, :]
+
+        return LlavaPromptEncoderCausalLMOutputWithPast(
+            loss=output.loss,
+            logits=output.logits,
+            past_key_values=output.past_key_values,
+            hidden_states=output.hidden_states,
+            attentions=output.attentions,
+            image_hidden_states=output.image_hidden_states,
+            last_hidden_state=last_hidden_state
+        )
+
+    def get_lora_layers_to_transform(self, last_n_layers):
+        if last_n_layers < 0:
+            return None
+        lora_layer_names = [i for i in range(32-last_n_layers, 32)]
+        return lora_layer_names
 
     def get_optimizer_groups(self, weight_decay, lr_layer_decay, lr_scale):
         llava_pg, llava_pids = default_optimizer_groups(
@@ -62,7 +61,8 @@ class LlavaPromptEncoder(LlavaForConditionalGeneration):
             weight_decay=weight_decay,
             lr_scale=lr_scale,
             no_decay_filter=[
-                "language_model.lm_head.*",
+                "*lora_*"
             ],
         )
         return llava_pg, llava_pids
+
