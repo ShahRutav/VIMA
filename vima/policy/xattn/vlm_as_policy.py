@@ -79,7 +79,7 @@ class VLMPolicy(LightningModule, BasePolicy):
     ):
         super().__init__()
 
-        torch_dtype = U.get_torch_dtype(torch_dtype)
+        self.torch_dtype = U.get_torch_dtype(torch_dtype)
         assert action_type in ["discrete", "continuous"]
         self.action_type = action_type
         self._n_discrete_x_bins = n_discrete_x_bins
@@ -264,13 +264,13 @@ class VLMPolicy(LightningModule, BasePolicy):
                 load_in_4bit=load_in_4bit,
                 bnb_4bit_use_double_quant=bnb_4bit_use_double_quant,
                 bnb_4bit_quant_type=bnb_4bit_quant_type,
-                bnb_4bit_compute_dtype=torch_dtype,
+                bnb_4bit_compute_dtype=self.torch_dtype,
         )
         vlm_model = vnn.LlavaPromptEncoder.from_pretrained(
                 model_name,
                 revision=revision,
                 quantization_config=bnb_config,
-                torch_dtype=torch_dtype,
+                torch_dtype=self.torch_dtype,
                 device_map={'':rank},
                 last_n_feats=vlm_last_n_feats,
         )
@@ -522,7 +522,7 @@ class VLMPolicy(LightningModule, BasePolicy):
         """
         # output all the hidden states is very memory inefficient.
         # converts to bfloat16. note the output with be float32 since lm_head is float32 handeled by the prepare_model_for_kbit_training
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
             vlm_feats = self.vlm_model(
                     **prompt_dict,
                     output_last_hidden_state=True,
