@@ -70,17 +70,17 @@ module:
 
 data_module:
   cls: vima.data.data_module.VIMADataModule
-  path: "/data/rutavms/data/dataset_50k_lang_left_pick/"
+  path: "/home/rutavms/data/vima/dataset_50k_lang_left_pick/"
   tokenizer_add_special_tokens: ???
   batch_size: ${bs}
   val_batch_size: ${vbs}
-  dataloader_num_workers: 64
-  train_portion: 0.924
+  dataloader_num_workers: 8
+  train_portion: 0.8
   tokenizer: ???
   use_bbox_repr: true
   cropped_img_size: ${cropped_img_size}
   num_trajs: ${num_trajs}
-  num_trajs_dict_path: /home/rutavms/research/preference/huihan_vima/vima/main/num_trajs_dict.json
+  num_trajs_dict_path: /home/rutavms/research/preference/VIMA/main/num_trajs_dict.json
   seed: ${seed}
   add_obj_aug: ${add_obj_aug}
   obj_aug_prob_map: ${obj_aug_prob_map}
@@ -90,6 +90,7 @@ trainer:
   cls: pytorch_lightning.Trainer
   strategy: ddp
   devices: ${gpus}
+  precision: 32 # can be overwrriten by individual algo
   benchmark: true  # enables cudnn.benchmark
   accumulate_grad_batches: 2
   num_sanity_val_steps: 2

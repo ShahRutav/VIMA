@@ -162,8 +162,6 @@ class VLMDataModule(VIMADataModule):
                 num_trajs_dict=self.num_trajs_dict,
                 seed=self.seed,
                 task_selection=self.task_selection,
-                add_obj_aug=self._add_obj_aug,
-                obj_aug_prob_map=self._obj_aug_prob_map,
                 train_on_unseen_task_for_finetune=self._train_on_unseen_task_for_finetune,
                 setup_data=setup_data,
                 bbox_from_detection_model=self._bbox_from_detection_model,

@@ -31,8 +31,6 @@ class VLMDataset(Dataset):
         num_trajs_dict: dict | None = None,
         seed: int | None = None,
         task_selection: str | list[str] | None = None,
-        add_obj_aug: bool = False,
-        obj_aug_prob_map: dict[int, float] | None = None,
         train_on_unseen_task_for_finetune: bool = False,
         setup_data: bool = True,
         bbox_from_detection_model: bool = False,
@@ -109,8 +107,6 @@ class VLMDataset(Dataset):
         # self._use_bbox_repr = use_bbox_repr
         self._cropped_img_size = cropped_img_size
         self._views = sorted(["top", "front"])
-        self._add_obj_aug = add_obj_aug
-        self._obj_aug_prob_map = obj_aug_prob_map
 
         self._bbox_from_detection_model = bbox_from_detection_model
         self._detection_model = detection_model

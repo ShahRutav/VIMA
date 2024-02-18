@@ -15,7 +15,8 @@ class VIMATrainer(LightingTrainer):
     def __init__(self, *args, inference: bool = False, **kwargs):
         self._inference = inference
         super().__init__(*args, **kwargs)
-        self.data_module.detection_model = self.module.policy.detection_model
+        if hasattr(self.module.policy, "detection_model"):
+            self.data_module.detection_model = self.module.policy.detection_model
 
     def create_module(self, cfg) -> pl.LightningModule:
         module = U.instantiate(cfg.module)
@@ -24,7 +25,7 @@ class VIMATrainer(LightingTrainer):
         if num_gpus == 0:
             num_gpus = 1
         effective_bs = cfg.bs * num_gpus * cfg.trainer.accumulate_grad_batches
-        num_tasks = 13
+        num_tasks = len(self.data_module.task_selection) if self.data_module.task_selection is not None else 13
         steps_per_epoch = ceil(
             num_tasks * cfg.num_trajs * cfg.data_module.train_portion / effective_bs
         )

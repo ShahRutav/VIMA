@@ -908,6 +908,7 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         )
     )
     padded_action_mask = U.any_to_datadict(U.any_ones_like(padded_action))
+    L_max = 1
     # collect prompt
     # bypass None case because prompt only need to be prepared once
     if samples_list[0][2] is not None:

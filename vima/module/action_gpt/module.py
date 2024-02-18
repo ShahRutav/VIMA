@@ -178,7 +178,6 @@ class ActionGPTModule(ImitationBaseModule):
             lr_layer_decay=self.lr_layer_decay,
             lr_scale=1.0,
         )
-        print("optimizer_groups: ", optimizer_groups)
         optimizer = torch.optim.AdamW(optimizer_groups, lr=lr)
         if self.use_cosine_lr:
             # calculate cosine scheduler based on gradient steps

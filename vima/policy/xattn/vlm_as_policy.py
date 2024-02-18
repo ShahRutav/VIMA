@@ -265,15 +265,15 @@ class VLMPolicy(LightningModule, BasePolicy):
                 bnb_4bit_quant_type=bnb_4bit_quant_type,
                 bnb_4bit_compute_dtype=torch_dtype,
         )
-        self.vlm_model = vnn.LlavaPromptEncoder.from_pretrained(
+        vlm_model = vnn.LlavaPromptEncoder.from_pretrained(
                 model_name,
                 revision=revision,
                 quantization_config=bnb_config,
                 torch_dtype=torch_dtype,
                 last_n_feats=vlm_last_n_feats,
         )
+        vlm_model = peft.prepare_model_for_kbit_training(vlm_model)
         # we keep this before the model is wrapped with trainable additional parameters
-        self.vlm_model = peft.prepare_model_for_kbit_training(self.vlm_model)
         if use_lora:
             lora_config = peft.LoraConfig(
                 r=lora_rank,
@@ -281,10 +281,12 @@ class VLMPolicy(LightningModule, BasePolicy):
                 lora_dropout=0.05,
                 bias="none",
                 target_modules=lora_target_modules,
-                layers_to_transform=self.vlm_model.get_lora_layers_to_transform(lora_only_last_n_layers) if lora_only_last_n_layers > 0 else None,
+                layers_to_transform=vlm_model.get_lora_layers_to_transform(lora_only_last_n_layers) if lora_only_last_n_layers > 0 else None,
                 task_type=peft.TaskType.CAUSAL_LM,
             )
-            self.vlm_model = peft.get_peft_model(self.vlm_model, lora_config)
+            vlm_model = peft.get_peft_model(vlm_model, lora_config)
+        self.vlm_model = vlm_model
+        del vlm_model
 
         if vlm_head_type == "mlp_block":
             self.vlm_head = vnn.MLP(
@@ -330,6 +332,7 @@ class VLMPolicy(LightningModule, BasePolicy):
         self._sub_action_loss_weights = sub_action_loss_weights
         self._views = img_views
         self._inference_cache = {}
+        torch.cuda.empty_cache()
 
     def training_step(self, batch, batch_idx):
         obs, action, action_mask, prompt_dict, task_name_to_batch_indices = batch
@@ -518,21 +521,23 @@ class VLMPolicy(LightningModule, BasePolicy):
         """
         # output all the hidden states is very memory inefficient.
         # TODO: Alternative: Replace lm_head with identiy and the use the last hidden state by accessing logits.
-        vlm_feats = self.vlm_model(
-                **prompt_dict,
-                output_last_hidden_state=True,
-                return_dict=True,
-        )
-        vlm_feats = vlm_feats.last_hidden_state
-        # # make a dummy feats for now
-        # vlm_feats = torch.zeros(action_token.shape[1], 1, self.embed_dim).to(self.device)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            # import ipdb; ipdb.set_trace()
+            # converts to bfloat16. note the output with be float32 since lm_head is float32 handeled by the prepare_model_for_kbit_training
+            vlm_feats = self.vlm_model(
+                    **prompt_dict,
+                    output_last_hidden_state=True,
+                    return_dict=True,
+            ).last_hidden_state
+            # # make a dummy feats for now
+            # vlm_feats = torch.zeros(action_token.shape[1], 1, self.embed_dim).to(self.device)
 
-        if vlm_feats.shape[1] > 1:
-            vlm_feats = vlm_feats.mean(dim=1, keepdim=True)
-        # B, 1, E -> B, 1, e
-        vlm_feats = self.vlm_head(vlm_feats)
-        # B, 1, e -> 1, B, e -> L, B, e
-        vlm_feats = U.any_transpose_first_two_axes(vlm_feats).expand(action_token.shape[0]+1, -1, -1)
+            if vlm_feats.shape[1] > 1:
+                vlm_feats = vlm_feats.mean(dim=1, keepdim=True)
+            # B, 1, E -> B, 1, e
+            vlm_feats = self.vlm_head(vlm_feats)
+            # B, 1, e -> 1, B, e -> L, B, e
+            vlm_feats = U.any_transpose_first_two_axes(vlm_feats).expand(action_token.shape[0]+1, -1, -1)
         return vlm_feats
 
     def forward_action_token(self, action):

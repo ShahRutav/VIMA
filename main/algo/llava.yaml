@@ -34,7 +34,7 @@ module:
     lora_alpha: 64
     lora_dropout: 0.05
     lora_target_modules: ['q_proj', 'k_proj', 'v_proj', 'o_proj']
-    lora_only_last_n_layers: -1
+    lora_only_last_n_layers: 8
 
     # ------ action decoder ------
     action_decoder_hidden_dim: 512
@@ -53,6 +53,13 @@ module:
     sub_action_loss_weights: null
 
 data_module:
-  tokenizer_add_special_tokens: true
-  tokenizer: "t5-base"
-  t5_prompt_prefix: null
+  cls: vima.data.data_module.VLMDataModule
+  tokenizer_add_special_tokens: True
+  model_name: ${module.policy.model_name}
+  tokenizer: ${module.policy.model_name}
+  use_bbox_repr: False
+  cropped_img_size: 224
+  prompt_file: vima/prompts/llava_lang_task.txt
+
+trainer:
+  precision: bf16-mixed
