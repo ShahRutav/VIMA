@@ -39,8 +39,8 @@ class ImitationBaseModule(LightningModule):
         self.log_dict(
             log_dict,
             prog_bar=True,
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             batch_size=real_batch_size,
         )
         return loss

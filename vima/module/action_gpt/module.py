@@ -27,6 +27,7 @@ class ActionGPTModule(ImitationBaseModule):
         lr_cosine_min: float,
         weight_decay: float = 0.0,
         lr_layer_decay: float = 1.0,
+        bs_wrt_lr: int = 256,
         # ====== online eval ======
         eval_partition: Literal[
             "within_distribution", "novel_combo", "unseen_object", "unseen_task"
@@ -67,6 +68,7 @@ class ActionGPTModule(ImitationBaseModule):
         self.weight_decay = weight_decay
         self.lr_layer_decay = lr_layer_decay
         self.batch_size = None  # used to scale LR
+        self.bs_wrt_lr = bs_wrt_lr
         # ====== online eval ======
         assert eval_partition in [
             "within_distribution",
@@ -164,14 +166,13 @@ class ActionGPTModule(ImitationBaseModule):
                 {"profiled_flops": flops, "profiled_params": params}
             )
             # one time profiling
-            exit()
         return rtn
 
     def configure_optimizers(self):
         lr, lr_cosine_min = self.lr, self.lr_cosine_min
         assert self.batch_size is not None
-        lr = lr * self.batch_size / 256
-        lr_cosine_min = lr_cosine_min * self.batch_size / 256
+        lr = lr * self.batch_size / self.bs_wrt_lr
+        lr_cosine_min = lr_cosine_min * self.batch_size / self.bs_wrt_lr
 
         optimizer_groups = self.policy.get_optimizer_groups(
             weight_decay=self.weight_decay,
@@ -191,6 +192,10 @@ class ActionGPTModule(ImitationBaseModule):
                 warmup_epochs=self.lr_warmup_epochs,
                 steps_per_epoch=self.steps_per_epoch,
             )
+            U.rank_zero_info(U.color_text(f"Scaled with batch size learning rate: {lr}"), "green")
+            U.rank_zero_info(U.color_text(f"Scaled with batch size minimum learning rate: {lr_cosine_min}"), "green")
+            U.rank_zero_info(U.color_text(f"Effective batch size: {self.batch_size}"), "green")
+            U.rank_zero_info(U.color_text(f"Effect steps per epoch: {self.steps_per_epoch}"), "green")
 
             scheduler = torch.optim.lr_scheduler.LambdaLR(
                 optimizer=optimizer,
@@ -218,7 +223,7 @@ class ActionGPTModule(ImitationBaseModule):
         results = self.evaluator.get_results()
         results = {f"eval/{k}": v for k, v in results.items()}
         self.log_dict(
-            results, prog_bar=False, on_step=False, on_epoch=True, batch_size=1
+            results, prog_bar=False, on_step=True, on_epoch=False, batch_size=1
         )
         return results
 

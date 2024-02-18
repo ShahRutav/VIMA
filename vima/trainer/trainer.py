@@ -37,12 +37,19 @@ class VIMATrainer(LightingTrainer):
         if num_gpus == 0:
             num_gpus = 1
         effective_bs = cfg.bs * num_gpus * cfg.trainer.accumulate_grad_batches
+        assert (self.data_module.task_selection is None) or isinstance(self.data_module.task_selection, list), \
+                f"Data module task selection should be stored as either None or list of tasks. \
+                Currently, {cfg.data_module.task_selection}"
         num_tasks = len(self.data_module.task_selection) if self.data_module.task_selection is not None else 13
+        U.rank_zero_info(U.color_text(f"num_tasks {num_tasks}, num_trajs: {cfg.num_trajs}, \
+                train_portion: {cfg.data_module.train_portion}, effective_bs: {effective_bs}", "green"))
         steps_per_epoch = ceil(
             num_tasks * cfg.num_trajs * cfg.data_module.train_portion / effective_bs
         )
         U.rank_zero_info(U.color_text(f"Steps per epoch: {steps_per_epoch}", "green"))
+        # all the scheduler iterations are counted using steps_per_epoch.
         module.steps_per_epoch = steps_per_epoch
+        # all learning rate are scaled according to effective_bs
         module.batch_size = effective_bs
         # attach dm to policy in favor of inference
         module.policy.data_module = self.data_module

@@ -10,21 +10,21 @@ run_name: "${optional_:${prefix}}\
   _b${bs}.vb${vbs}\
   ${__optional:${suffix}}\
   ${_optional:${postsuffix}}"
-exp_root_dir: "/home/rutavms/research/preference/huihan_vima/vima/experiments/${arch}" #"/home/user/workspace/yunfan/vima_finalized/${arch}"
+exp_root_dir: "/home/rutavms/research/preference/VIMA/experiments/${arch}"
 
 # ====== main cfg ======
 seed: 3074
 gpus: ${ifelse:${test.ckpt_path},1,-1}
 lr: 1e-4
-wd: 0.0
+wd: 1e-2 # default value in pytorch adamw
 lr_layer_decay: 1.0
 arch: ???  # filled by algo/*/*.yaml
 bs: 16  # batch size, on 32G v100, 200M-scale model
 vbs: ${mult:${bs},1}
 num_trajs: 50000
 warmup_epochs: 3
-decay_epochs: 7
 epochs: 10
+decay_epochs: ${epochs} # decay till the last epoch
 
 eval_best_model: true
 
@@ -53,6 +53,7 @@ module:
   lr_cosine_min: 1e-7
   weight_decay: ${wd}
   lr_layer_decay: ${lr_layer_decay}
+  bs_wrt_lr: 32
   # ------ online eval ------
   eval_partition: within_distribution
   eval_vec_env_size: null
@@ -80,7 +81,6 @@ data_module:
   use_bbox_repr: true
   cropped_img_size: ${cropped_img_size}
   num_trajs: ${num_trajs}
-  num_trajs_dict_path: /home/rutavms/research/preference/VIMA/main/num_trajs_dict.json
   seed: ${seed}
   add_obj_aug: ${add_obj_aug}
   obj_aug_prob_map: ${obj_aug_prob_map}

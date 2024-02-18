@@ -28,7 +28,6 @@ class VLMDataset(Dataset):
         use_bbox_repr: bool = True,
         cropped_img_size: int = 224,
         num_trajs: int | None = None,
-        num_trajs_dict: dict | None = None,
         seed: int | None = None,
         task_selection: str | list[str] | None = None,
         train_on_unseen_task_for_finetune: bool = False,
@@ -88,11 +87,7 @@ class VLMDataset(Dataset):
                 # get all folders in task_path, note that valid trajectories are in folders with names that are integers
                 folders = [f for f in os.listdir(task_path) if f.isdigit()]
                 random_state.shuffle(folders)
-                if num_trajs_dict is not None:
-                    num_trajs = num_trajs_dict[task]
-                    assert num_trajs <= len(folders), f"{num_trajs} > {len(folders)}"
-                    folders = folders[:num_trajs]
-                elif num_trajs is not None:
+                if num_trajs is not None:
                     assert num_trajs <= len(folders), f"{num_trajs} > {len(folders)}"
                     folders = folders[:num_trajs]
                 traj_paths[task] = [U.f_join(task_path, f) for f in folders]
