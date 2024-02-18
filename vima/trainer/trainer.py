@@ -19,6 +19,18 @@ class VIMATrainer(LightingTrainer):
             self.data_module.detection_model = self.module.policy.detection_model
 
     def create_module(self, cfg) -> pl.LightningModule:
+        for attr in [
+            "global_rank",
+            "local_rank",
+            "world_size",
+            "num_nodes",
+            # "num_processes",
+            "node_rank",
+            # "num_gpus",
+            # "data_parallel_device_ids",
+        ]:
+            print(attr, getattr(self.trainer, attr))
+        cfg.module.policy.rank = self.trainer.local_rank
         module = U.instantiate(cfg.module)
         # compute steps per epoch for LR scheduler
         num_gpus = self.trainer.num_devices

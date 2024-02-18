@@ -38,6 +38,7 @@ class VLMPolicy(LightningModule, BasePolicy):
         load_in_4bit: bool,
         bnb_4bit_use_double_quant: bool,
         bnb_4bit_quant_type: str,
+        rank: int,
         # vlm head that projects the vlm hidden state to the embed_dim
         vlm_head_type: Literal["linear", "mlp_block", "default"],
         # ......... finetuning configs .........
@@ -270,8 +271,10 @@ class VLMPolicy(LightningModule, BasePolicy):
                 revision=revision,
                 quantization_config=bnb_config,
                 torch_dtype=torch_dtype,
+                device_map={'':rank},
                 last_n_feats=vlm_last_n_feats,
         )
+        # vlm_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
         vlm_model = peft.prepare_model_for_kbit_training(vlm_model)
         # we keep this before the model is wrapped with trainable additional parameters
         if use_lora:
@@ -332,11 +335,9 @@ class VLMPolicy(LightningModule, BasePolicy):
         self._sub_action_loss_weights = sub_action_loss_weights
         self._views = img_views
         self._inference_cache = {}
-        torch.cuda.empty_cache()
 
     def training_step(self, batch, batch_idx):
         obs, action, action_mask, prompt_dict, task_name_to_batch_indices = batch
-        # calculate the DRAM usage
 
         B = list(prompt_dict.values())[0].shape[0]
         # L_obs, B = list(obs.values())[0].shape[:2]
@@ -520,10 +521,8 @@ class VLMPolicy(LightningModule, BasePolicy):
         action_token and prompt_token: (L, B, E)
         """
         # output all the hidden states is very memory inefficient.
-        # TODO: Alternative: Replace lm_head with identiy and the use the last hidden state by accessing logits.
+        # converts to bfloat16. note the output with be float32 since lm_head is float32 handeled by the prepare_model_for_kbit_training
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            # import ipdb; ipdb.set_trace()
-            # converts to bfloat16. note the output with be float32 since lm_head is float32 handeled by the prepare_model_for_kbit_training
             vlm_feats = self.vlm_model(
                     **prompt_dict,
                     output_last_hidden_state=True,

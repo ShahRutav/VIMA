@@ -3,7 +3,6 @@ from typing import Optional, List, Tuple
 
 import torch
 import torch.nn as nn
-import peft
 from enlight.learn import transformer_lr_decay_optimizer_groups, default_optimizer_groups
 
 from transformers.modeling_outputs import ModelOutput

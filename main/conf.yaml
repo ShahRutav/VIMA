@@ -70,7 +70,7 @@ module:
 
 data_module:
   cls: vima.data.data_module.VIMADataModule
-  path: "/home/rutavms/data/vima/dataset_50k_lang_left_pick/"
+  path: "/mnt/data1/rutavms/data/vima/dataset_50k_lang_left_pick/"
   tokenizer_add_special_tokens: ???
   batch_size: ${bs}
   val_batch_size: ${vbs}
@@ -97,6 +97,7 @@ trainer:
   max_epochs: ${epochs}
   val_check_interval: 1.0
   gradient_clip_val: 1.0
+  use_distributed_sampler: True
   checkpoint:  # this sub-dict will be popped to send to ModelCheckpoint as args
   - filename: "epoch{epoch}-val_acc{val/acc:.5f}"
     save_top_k: 1
