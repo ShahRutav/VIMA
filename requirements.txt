@@ -4,3 +4,7 @@ kornia
 einops
 tokenizers
 transformers
+tabulate
+easydict
+rich
+pytorch-lightning==2.2.0
