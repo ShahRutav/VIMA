@@ -166,6 +166,7 @@ class ActionGPTModule(ImitationBaseModule):
                 {"profiled_flops": flops, "profiled_params": params}
             )
             # one time profiling
+            exit()
         return rtn
 
     def configure_optimizers(self):
@@ -223,7 +224,7 @@ class ActionGPTModule(ImitationBaseModule):
         results = self.evaluator.get_results()
         results = {f"eval/{k}": v for k, v in results.items()}
         self.log_dict(
-            results, prog_bar=False, on_step=True, on_epoch=False, batch_size=1
+            results, prog_bar=False, on_step=False, on_epoch=True, batch_size=1
         )
         return results
 
