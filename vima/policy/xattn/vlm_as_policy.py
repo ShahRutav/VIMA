@@ -338,11 +338,11 @@ class VLMPolicy(LightningModule, BasePolicy):
 
     def training_step(self, batch, batch_idx):
         obs, action, action_mask, prompt_dict, task_name_to_batch_indices = batch
-        print('input_ids', prompt_dict['input_ids'])
-        print('action', action)
-        print('task_name_to_batch_indices', task_name_to_batch_indices)
-        print('action_mask', action_mask)
-        import ipdb; ipdb.set_trace()
+        # print('input_ids', prompt_dict['input_ids'])
+        # print('action', action)
+        # print('task_name_to_batch_indices', task_name_to_batch_indices)
+        # print('action_mask', action_mask)
+        # import ipdb; ipdb.set_trace()
 
         B = list(prompt_dict.values())[0].shape[0]
         # L_obs, B = list(obs.values())[0].shape[:2]

@@ -98,6 +98,7 @@ class ActionGPTModule(ImitationBaseModule):
             self.policy.detection_model = detection_model
 
         if ckpt_path is not None:
+            print(f"Loading from ckpt path: {ckpt_path}")
             self.load_state_dict(
                 torch.load(
                     ckpt_path,

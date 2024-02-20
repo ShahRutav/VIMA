@@ -840,7 +840,7 @@ def collate_fn_rgb_only(samples_list):
 def collate_fn_vlm_rgb_only(samples_list, tokenizer):
     B = len(samples_list)
     missing_action = samples_list[0][1] is None
-    print("missing_action", missing_action)
+    # print("missing_action", missing_action)
     # Lp1_max = max([U.get_batch_size(obs, strict=True) for obs, _, _, _ in samples_list])
     if missing_action:
         L_max = 1
@@ -906,8 +906,8 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         sample_indices = [np.random.choice(1) for _ in samples_list]
     else:
         sample_indices = [np.random.choice(U.get_batch_size(action, strict=True)) for _, action, _, _ in samples_list]
-    print("sample_indices", sample_indices)
-    import ipdb; ipdb.set_trace()
+    # print("sample_indices", sample_indices)
+    # import ipdb; ipdb.set_trace()
     # actions are of shape [L, dim]
     # here instead of padding, we slice the action to sample only one action at a time
     if not missing_action:

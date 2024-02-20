@@ -186,7 +186,7 @@ def main(eval_cfg):
 
         obs = env.reset()
         rgb_plot = copy.deepcopy(obs['rgb']['top'])
-        # env.render()
+        env.render()
 
         meta_info = env.meta_info
         env_prompt = env.prompt
@@ -208,7 +208,7 @@ def main(eval_cfg):
                 for k, v in oracle_action.items()
             }
             oracle_action_prepare = stack_sequence_fields([oracle_action])
-            print(obs.keys())
+            # print(obs.keys())
             obs_list = [obs]
             # imported from vima_bench
             obs_prepare = stack_sequence_fields(obs_list)
@@ -248,80 +248,84 @@ def main(eval_cfg):
             prompt_tokens_to_forward = {k: v.to(eval_cfg.device) for k, v in prompt_tokens_to_forward.items()}
 
             with torch.autocast(device_type="cuda", dtype=policy.dtype):
-                loss, metrics, bs = policy.training_step((obs_tokens_to_forward, action_f_to_forward, action_mask_f_to_forward, prompt_tokens_to_forward, task_name_to_batch_indices_f), 0)
-                print(metrics['loss_pose0_position'])
-                print("loss: ", loss)
-                print("metrics: ", metrics)
-                print("bs: ", bs)
-            import ipdb; ipdb.set_trace()
+                if True:
+                    loss, metrics, bs = policy.training_step((obs_tokens_to_forward, action_f_to_forward, action_mask_f_to_forward, prompt_tokens_to_forward, task_name_to_batch_indices_f), 0)
+                    print(metrics['loss_pose0_position'])
+                    print("loss: ", loss)
+                    print("metrics: ", metrics)
+                    print("bs: ", bs)
+                    break
+                # # import ipdb; ipdb.set_trace()
 
-            # TODO: discretize the action if present
-            predicted_action_tokens = policy.forward(
-                    action_token=None,
-                    prompt_dict=prompt_tokens_to_forward,
-            )  # (1, B, E)
-            predicted_action_tokens = predicted_action_tokens.to(policy.dtype)
+                # TODO: discretize the action if present
+                if False:
+                    predicted_action_tokens = policy.forward(
+                            action_token=None,
+                            prompt_dict=prompt_tokens_to_forward,
+                    )  # (1, B, E)
+                    predicted_action_tokens = predicted_action_tokens.to(policy.dtype)
 
-            dist_dict = policy.forward_action_decoder(predicted_action_tokens)
-            actions = {k: v.mode() for k, v in dist_dict.items()}
+                    dist_dict = policy.forward_action_decoder(predicted_action_tokens)
+                    actions = {k: v.mode() for k, v in dist_dict.items()}
 
-            action_tokens = policy.forward_action_token(actions)  # (1, B, E)
-            action_tokens = action_tokens.squeeze(0)  # (B, E)
-            actions = policy._de_discretize_actions(actions)
+                    action_tokens = policy.forward_action_token(actions)  # (1, B, E)
+                    action_tokens = action_tokens.squeeze(0)  # (B, E)
+                    actions = policy._de_discretize_actions(actions)
 
-            action_to_plot['pose0_position'].append(copy.deepcopy(actions['pose0_position']).detach().cpu().numpy())
-            action_to_plot['pose1_position'].append(copy.deepcopy(actions['pose1_position']).detach().cpu().numpy())
-            action_to_plot['rgb'].append(copy.deepcopy(rgb_plot))
+                    action_to_plot['pose0_position'].append(copy.deepcopy(actions['pose0_position']).detach().cpu().numpy())
+                    action_to_plot['pose1_position'].append(copy.deepcopy(actions['pose1_position']).detach().cpu().numpy())
+                    action_to_plot['rgb'].append(copy.deepcopy(rgb_plot))
 
-            action_bounds = [meta_info["action_bounds"]]
-            action_bounds_low = [action_bound["low"] for action_bound in action_bounds]
-            action_bounds_high = [
-                action_bound["high"] for action_bound in action_bounds
-            ]
-            action_bounds_low = np.asarray(action_bounds_low)
-            action_bounds_high = np.asarray(action_bounds_high)
-            action_bounds_low = torch.tensor(
-                action_bounds_low, dtype=torch.float32, device=eval_cfg.device
-            )
-            action_bounds_high = torch.tensor(
-                action_bounds_high, dtype=torch.float32, device=eval_cfg.device
-            )
-            actions["pose0_position"] = (
-                actions["pose0_position"] * (action_bounds_high - action_bounds_low)
-                + action_bounds_low
-            )
-            actions["pose1_position"] = (
-                actions["pose1_position"] * (action_bounds_high - action_bounds_low)
-                + action_bounds_low
-            )
-            actions["pose0_position"] = torch.clamp(
-                actions["pose0_position"], min=action_bounds_low, max=action_bounds_high
-            )
-            actions["pose1_position"] = torch.clamp(
-                actions["pose1_position"], min=action_bounds_low, max=action_bounds_high
-            )
+                    action_bounds = [meta_info["action_bounds"]]
+                    action_bounds_low = [action_bound["low"] for action_bound in action_bounds]
+                    action_bounds_high = [
+                        action_bound["high"] for action_bound in action_bounds
+                    ]
+                    action_bounds_low = np.asarray(action_bounds_low)
+                    action_bounds_high = np.asarray(action_bounds_high)
+                    action_bounds_low = torch.tensor(
+                        action_bounds_low, dtype=torch.float32, device=eval_cfg.device
+                    )
+                    action_bounds_high = torch.tensor(
+                        action_bounds_high, dtype=torch.float32, device=eval_cfg.device
+                    )
+                    actions["pose0_position"] = (
+                        actions["pose0_position"] * (action_bounds_high - action_bounds_low)
+                        + action_bounds_low
+                    )
+                    actions["pose1_position"] = (
+                        actions["pose1_position"] * (action_bounds_high - action_bounds_low)
+                        + action_bounds_low
+                    )
+                    actions["pose0_position"] = torch.clamp(
+                        actions["pose0_position"], min=action_bounds_low, max=action_bounds_high
+                    )
+                    actions["pose1_position"] = torch.clamp(
+                        actions["pose1_position"], min=action_bounds_low, max=action_bounds_high
+                    )
 
-            actions["pose0_rotation"] = actions["pose0_rotation"] * 2 - 1
-            actions["pose1_rotation"] = actions["pose1_rotation"] * 2 - 1
-            actions["pose0_rotation"] = torch.clamp(
-                actions["pose0_rotation"], min=-1, max=1
-            )
-            actions["pose1_rotation"] = torch.clamp(
-                actions["pose1_rotation"], min=-1, max=1
-            )
-            actions = {k: v.cpu().numpy() for k, v in actions.items()}
-            actions = any_slice(actions, np.s_[0, 0])
-            # print(actions)
-            obs, _, done, info = env.step(actions)
-            rgb_plot = copy.deepcopy(obs['rgb']['top'])
-            elapsed_steps += 1
-            if done:
-                if eval_cfg.save_video:
-                    plot_actions(action_to_plot, os.path.join(video_dir, f"video_{num_eval_traj:03d}.png"))
-                print(env.env.env.task.check_success().success)
-                num_successes += env.env.env.task.check_success().success
-                num_eval_traj -= 1
-                break
+                    actions["pose0_rotation"] = actions["pose0_rotation"] * 2 - 1
+                    actions["pose1_rotation"] = actions["pose1_rotation"] * 2 - 1
+                    actions["pose0_rotation"] = torch.clamp(
+                        actions["pose0_rotation"], min=-1, max=1
+                    )
+                    actions["pose1_rotation"] = torch.clamp(
+                        actions["pose1_rotation"], min=-1, max=1
+                    )
+                    actions = {k: v.cpu().numpy() for k, v in actions.items()}
+                    actions = any_slice(actions, np.s_[0, 0])
+                    # print(actions)
+                    obs, _, done, info = env.step(actions)
+                    rgb_plot = copy.deepcopy(obs['rgb']['top'])
+                    elapsed_steps += 1
+                    if done:
+                        if eval_cfg.save_video:
+                            plot_actions(action_to_plot, os.path.join(video_dir, f"video_{num_eval_traj:03d}.png"))
+                        print(env.env.env.task.check_success().success)
+                        num_successes += env.env.env.task.check_success().success
+                        num_eval_traj -= 1
+                        print(f"Success rate: {num_successes/(NUM_EVAL_TRAJ - num_eval_traj)}")
+                        break
     print("************************************************************************")
     print("Success: ")
     print("{}".format((100.00*num_successes)/NUM_EVAL_TRAJ))
