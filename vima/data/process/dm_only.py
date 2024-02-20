@@ -306,7 +306,7 @@ def prepare_sample_vlm_rgb_only(
 ):
     # get number of time-steps
     L = U.get_batch_size(obs) - 1
-    assert L == U.get_batch_size(action) == meta["steps"]
+    assert (L == 0) or (L == U.get_batch_size(action) == meta["steps"])
 
     obs_rtn = prepare_vlm_obs_rgb_only(
         obs=obs,
@@ -316,30 +316,31 @@ def prepare_sample_vlm_rgb_only(
 
     # normalize action to [0, 1]
     # normalize position with action_position_bounds
-    action["pose0_position"] = (
-        action["pose0_position"] - action_position_bounds["low"]
-    ) / (action_position_bounds["high"] - action_position_bounds["low"])
-    action["pose1_position"] = (
-        action["pose1_position"] - action_position_bounds["low"]
-    ) / (action_position_bounds["high"] - action_position_bounds["low"])
-    # check all normalized positions are in [0, 1]
-    assert np.all(action["pose0_position"] >= 0) and np.all(
-        action["pose0_position"] <= 1
-    )
-    assert np.all(action["pose1_position"] >= 0) and np.all(
-        action["pose1_position"] <= 1
-    )
-    # normalize rotation
-    # rotation is represented in quaternion in [-1, 1]
-    action["pose0_rotation"] = (action["pose0_rotation"] + 1) / 2
-    action["pose1_rotation"] = (action["pose1_rotation"] + 1) / 2
-    # check all normalized rotations are in [0, 1]
-    assert np.all(action["pose0_rotation"] >= 0) and np.all(
-        action["pose0_rotation"] <= 1
-    )
-    assert np.all(action["pose1_rotation"] >= 0) and np.all(
-        action["pose1_rotation"] <= 1
-    )
+    if action is not None:
+        action["pose0_position"] = (
+            action["pose0_position"] - action_position_bounds["low"]
+        ) / (action_position_bounds["high"] - action_position_bounds["low"])
+        action["pose1_position"] = (
+            action["pose1_position"] - action_position_bounds["low"]
+        ) / (action_position_bounds["high"] - action_position_bounds["low"])
+        # check all normalized positions are in [0, 1]
+        assert np.all(action["pose0_position"] >= 0) and np.all(
+            action["pose0_position"] <= 1
+        )
+        assert np.all(action["pose1_position"] >= 0) and np.all(
+            action["pose1_position"] <= 1
+        )
+        # normalize rotation
+        # rotation is represented in quaternion in [-1, 1]
+        action["pose0_rotation"] = (action["pose0_rotation"] + 1) / 2
+        action["pose1_rotation"] = (action["pose1_rotation"] + 1) / 2
+        # check all normalized rotations are in [0, 1]
+        assert np.all(action["pose0_rotation"] >= 0) and np.all(
+            action["pose0_rotation"] <= 1
+        )
+        assert np.all(action["pose1_rotation"] >= 0) and np.all(
+            action["pose1_rotation"] <= 1
+        )
 
     # tokenize prompt
     # bypass None case because this function is also used in eval rollout, where we prepare prompt once and cache it
@@ -838,10 +839,15 @@ def collate_fn_rgb_only(samples_list):
 
 def collate_fn_vlm_rgb_only(samples_list, tokenizer):
     B = len(samples_list)
+    missing_action = samples_list[0][1] is None
+    print("missing_action", missing_action)
     # Lp1_max = max([U.get_batch_size(obs, strict=True) for obs, _, _, _ in samples_list])
-    L_max = max(
-        [U.get_batch_size(action, strict=True) for _, action, _, _ in samples_list]
-    )
+    if missing_action:
+        L_max = 1
+    else:
+        L_max = max(
+            [U.get_batch_size(action, strict=True) for _, action, _, _ in samples_list]
+        )
     # assert L_max + 1 == Lp1_max
 
     # obs_list = [sample[0] for sample in samples_list]
@@ -895,20 +901,27 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         padded_action_mask = None
     '''
     # this will always be 0 in for trajectory of length 1
-    sample_indices = [np.random.choice(U.get_batch_size(action, strict=True)) for _, action, _, _ in samples_list]
+    padded_action, padded_action_mask, sample_action = None, None, None
+    if missing_action:
+        sample_indices = [np.random.choice(1) for _ in samples_list]
+    else:
+        sample_indices = [np.random.choice(U.get_batch_size(action, strict=True)) for _, action, _, _ in samples_list]
+    print("sample_indices", sample_indices)
+    import ipdb; ipdb.set_trace()
     # actions are of shape [L, dim]
     # here instead of padding, we slice the action to sample only one action at a time
-    padded_action = U.any_to_datadict(
-        U.any_stack(
-            [
-                 U.any_slice(sample[1], np.s_[i:i+1]) \
-                    for sample, i in zip(samples_list, sample_indices)
-            ],
-            dim=0,
+    if not missing_action:
+        padded_action = U.any_to_datadict(
+            U.any_stack(
+                [
+                     U.any_slice(sample[1], np.s_[i:i+1]) \
+                        for sample, i in zip(samples_list, sample_indices)
+                ],
+                dim=0,
+            )
         )
-    )
-    padded_action_mask = U.any_to_datadict(U.any_ones_like(padded_action))
-    L_max = 1
+        padded_action_mask = U.any_to_datadict(U.any_ones_like(padded_action))
+    L_sampled_length = 1
     # collect prompt
     # bypass None case because prompt only need to be prepared once
     if samples_list[0][2] is not None:
@@ -929,10 +942,10 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         padded_action_mask = U.any_transpose_first_two_axes(padded_action_mask)
 
     if padded_action is not None:
-        assert U.get_batch_size(padded_action, strict=True) == L_max
+        assert U.get_batch_size(padded_action, strict=True) == L_sampled_length
         assert U.get_batch_size(U.any_slice(padded_action, np.s_[0]), strict=True) == B
     if padded_action_mask is not None:
-        assert U.get_batch_size(padded_action_mask, strict=True) == L_max
+        assert U.get_batch_size(padded_action_mask, strict=True) == L_sampled_length
         assert (
             U.get_batch_size(U.any_slice(padded_action_mask, np.s_[0]), strict=True)
             == B
@@ -953,26 +966,28 @@ def collate_fn_vlm_rgb_only(samples_list, tokenizer):
         # if task_name in ["rotate", "twist"]:
             rotation_mask[batch_indices] = True
     rotation_mask = rotation_mask.unsqueeze(0).unsqueeze(-1)
-    padded_action_mask["pose0_rotation"] = (
-        padded_action_mask["pose0_rotation"] * rotation_mask
-    )
-    padded_action_mask["pose1_rotation"] = (
-        padded_action_mask["pose1_rotation"] * rotation_mask
-    )
+    if padded_action_mask is not None:
+        padded_action_mask["pose0_rotation"] = (
+            padded_action_mask["pose0_rotation"] * rotation_mask
+        )
+        padded_action_mask["pose1_rotation"] = (
+            padded_action_mask["pose1_rotation"] * rotation_mask
+        )
 
-    # discard z coordinate
-    padded_action["pose0_position"] = U.any_slice(
-        padded_action["pose0_position"], np.s_[:, :, :2]
-    )
-    padded_action["pose1_position"] = U.any_slice(
-        padded_action["pose1_position"], np.s_[:, :, :2]
-    )
-    padded_action_mask["pose0_position"] = U.any_slice(
-        padded_action_mask["pose0_position"], np.s_[:, :, :2]
-    )
-    padded_action_mask["pose1_position"] = U.any_slice(
-        padded_action_mask["pose1_position"], np.s_[:, :, :2]
-    )
+    if padded_action is not None:
+        # discard z coordinate
+        padded_action["pose0_position"] = U.any_slice(
+            padded_action["pose0_position"], np.s_[:, :, :2]
+        )
+        padded_action["pose1_position"] = U.any_slice(
+            padded_action["pose1_position"], np.s_[:, :, :2]
+        )
+        padded_action_mask["pose0_position"] = U.any_slice(
+            padded_action_mask["pose0_position"], np.s_[:, :, :2]
+        )
+        padded_action_mask["pose1_position"] = U.any_slice(
+            padded_action_mask["pose1_position"], np.s_[:, :, :2]
+        )
 
     return (
         None, # padded_obs

@@ -338,6 +338,11 @@ class VLMPolicy(LightningModule, BasePolicy):
 
     def training_step(self, batch, batch_idx):
         obs, action, action_mask, prompt_dict, task_name_to_batch_indices = batch
+        print('input_ids', prompt_dict['input_ids'])
+        print('action', action)
+        print('task_name_to_batch_indices', task_name_to_batch_indices)
+        print('action_mask', action_mask)
+        import ipdb; ipdb.set_trace()
 
         B = list(prompt_dict.values())[0].shape[0]
         # L_obs, B = list(obs.values())[0].shape[:2]
@@ -522,6 +527,10 @@ class VLMPolicy(LightningModule, BasePolicy):
         """
         # output all the hidden states is very memory inefficient.
         # converts to bfloat16. note the output with be float32 since lm_head is float32 handeled by the prepare_model_for_kbit_training
+        if action_token is not None:
+            obs_repeat = action_token.shape[0]+1
+        else:
+            obs_repeat = 1
         with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
             vlm_feats = self.vlm_model(
                     **prompt_dict,
@@ -535,8 +544,8 @@ class VLMPolicy(LightningModule, BasePolicy):
                 vlm_feats = vlm_feats.mean(dim=1, keepdim=True)
             # B, 1, E -> B, 1, e
             vlm_feats = self.vlm_head(vlm_feats)
-            # B, 1, e -> 1, B, e -> L, B, e
-            vlm_feats = U.any_transpose_first_two_axes(vlm_feats).expand(action_token.shape[0]+1, -1, -1)
+            # B, 1, e -> 1, B, e
+            vlm_feats = U.any_transpose_first_two_axes(vlm_feats) #.expand(1, -1, -1)
         return vlm_feats
 
     def forward_action_token(self, action):

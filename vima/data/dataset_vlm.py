@@ -11,6 +11,7 @@ from einops import rearrange
 from PIL import Image
 from tqdm import tqdm
 
+
 import vima.utils as U
 
 from .constants import PLACEHOLDER_TOKENS
@@ -37,8 +38,8 @@ class VLMDataset(Dataset):
     ):
         assert use_bbox_repr == False, "We don't support bbox_repr for VLM models yet."
         self.processor = AutoProcessor.from_pretrained(model_name, padding_side="left")
-        _n_added_tokens = self.processor.tokenizer.add_tokens(PLACEHOLDER_TOKENS)
-        assert _n_added_tokens == len(PLACEHOLDER_TOKENS), "INTERNAL"
+        # _n_added_tokens = self.processor.tokenizer.add_tokens(PLACEHOLDER_TOKENS)
+        # assert _n_added_tokens == len(PLACEHOLDER_TOKENS), "INTERNAL"
         self.tokenizer = self.processor.tokenizer
         self.prompt_template = open(prompt_file, "r").read()
 

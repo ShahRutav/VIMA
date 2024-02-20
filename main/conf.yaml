@@ -71,7 +71,7 @@ module:
 
 data_module:
   cls: vima.data.data_module.VIMADataModule
-  path: "/mnt/data1/rutavms/data/vima/dataset_50k_lang_left_pick/"
+  path: "/home/rutavms/data/vima/dataset_50k_lang_left_pick/"
   tokenizer_add_special_tokens: ???
   batch_size: ${bs}
   val_batch_size: ${vbs}

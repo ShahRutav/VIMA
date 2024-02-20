@@ -821,6 +821,8 @@ def collate_vlm_prompt_rgb_only(*, tokenizer, raw_prompt_list, sample_indices):
     attention_mask = [prompt["attention_mask"] for prompt in raw_prompt]
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=tokenizer.pad_token_id, padding_side=tokenizer.padding_side)
     attention_mask = pad_sequence(attention_mask, batch_first=True, padding_value=0, padding_side=tokenizer.padding_side)
+    print('padded_sequence, attention_mask')
+    print(input_ids, attention_mask)
 
     for ind in range(len(raw_prompt)):
         raw_prompt[ind]["input_ids"] = input_ids[ind]
